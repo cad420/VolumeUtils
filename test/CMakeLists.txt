@@ -1,0 +1,2 @@
+add_executable(TestGridVolume TestGridVolume.cpp)
+target_link_libraries(TestGridVolume PRIVATE VolumeUtils)
