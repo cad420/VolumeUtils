@@ -13,5 +13,10 @@ target_include_directories(
         PUBLIC
         ${PROJECT_SOURCE_DIR}/include
 )
+target_compile_features(
+        VolumeUtils
+        PUBLIC
+        cxx_std_17
+)
 
 add_subdirectory(test)

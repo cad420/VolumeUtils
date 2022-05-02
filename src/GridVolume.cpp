@@ -33,7 +33,7 @@ void PrintLastErrorMsg()
     printf( "Win32 API Last Error Code: [%d] %s\n", dw, msg );
 }
 template<typename Voxel>
-GridVolume<Voxel>::GridVolume(const GridVolumeDesc &desc, const std::string filename) {
+GridVolume<Voxel>::GridVolume(const GridVolumeDesc &desc, const std::string& filename) {
     _ = std::make_unique<GridVolumePrivate>();
     size_t fileSize = desc.extend.size() * sizeof(Voxel);
     try{
@@ -177,4 +177,7 @@ Voxel &GridVolume<Voxel>::operator()(int x, int y, int z) {
 }
 
 
-template class GridVolume<Voxel<VoxelType::uint8,VoxelFormat::R>>;
+template class GridVolume<VoxelRU8>;
+template class GridVolume<VoxelRU16>;
+
+

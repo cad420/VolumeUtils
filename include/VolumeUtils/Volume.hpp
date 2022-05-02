@@ -9,12 +9,39 @@
 #include <functional>
 #include <vector>
 #include <memory>
-enum class VoxelType {
+
+enum class VoxelType :int{
     unknown = 0, uint8, uint16, float32
 };
-enum class VoxelFormat {
+enum class VoxelFormat :int{
     NONE = 0, R = 1, RG = 2, RGB = 3, RGBA = 4
 };
+inline size_t GetVoxelSize(VoxelType type,VoxelFormat format){
+    size_t size = 0;
+    switch (type) {
+        case VoxelType::uint8:size = 1;
+            break;
+        case VoxelType::uint16:size = 2;
+            break;
+        case VoxelType::float32:size = 4;
+            break;
+        default:
+            break;
+    }
+    switch (format) {
+        case VoxelFormat::R: size *= 1;
+            break;
+        case VoxelFormat::RG: size *= 2;
+            break;
+        case VoxelFormat::RGB: size *= 3;
+            break;
+        case VoxelFormat::RGBA: size *= 4;
+            break;
+        default:
+            break;
+    }
+    return size;
+}
 struct VoxelSpace {
     float x = 0.f;
     float y = 0.f;
@@ -32,6 +59,7 @@ struct Voxel<VoxelType::uint8, VoxelFormat::R> {
 
     static constexpr size_t size() { return 1; }
 };
+using VoxelRU8 = Voxel<VoxelType::uint8,VoxelFormat::R>;
 
 template<>
 struct Voxel<VoxelType::uint16, VoxelFormat::R> {
@@ -42,6 +70,7 @@ struct Voxel<VoxelType::uint16, VoxelFormat::R> {
 
     static constexpr size_t size() { return 2; }
 };
+using VoxelRU16 = Voxel<VoxelType::uint16,VoxelFormat::R>;
 
 struct Extend3D {
     uint32_t width;
@@ -57,21 +86,31 @@ struct GridVolumeDesc {
     VoxelSpace space;
 };
 
+
+template<typename Voxel>
+class VolumeInterface{
+public:
+    virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) = 0;
+
+    virtual void UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const Voxel *buf) = 0;
+
+};
+
 class GridVolumePrivate;
 template<typename Voxel>
-class GridVolume {
+class GridVolume : public VolumeInterface<Voxel>{
 public:
-
-    GridVolume(const GridVolumeDesc &desc, const std::string filename);
+    using VoxelT = Voxel;
+    GridVolume(const GridVolumeDesc &desc, const std::string& filename);
 
     ~GridVolume();
 
     const GridVolumeDesc &GetGridVolumeDesc() const;
 
     //xyz may out of volume is acceptable, but length of buf must equal to dx*dy*dz
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf);
+    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) override;
 
-    void UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const Voxel *buf);
+    void UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const Voxel *buf) override;
 
     Voxel& operator()(int x,int y,int z);
 
@@ -80,18 +119,19 @@ public:
 private:
     std::unique_ptr<GridVolumePrivate> _;
 };
-
+enum class SliceAxis{
+    AXIS_X,AXIS_Y,AXIS_Z
+};
 struct SlicedGridVolumeDesc {
-    Extend3D extend;
-    VoxelSpace space;
+    GridVolumeDesc desc;
+    SliceAxis axis;
     std::function<std::string(uint32_t)> name_generator;
 };
 
 template<typename Voxel>
-class SlicedGridVolume {
+class SlicedGridVolume :public VolumeInterface<Voxel>{
 public:
-
-
+    using VoxelT = Voxel;
     SlicedGridVolume(const SlicedGridVolumeDesc &desc, const std::string filename);
 
     ~SlicedGridVolume();
@@ -100,58 +140,114 @@ public:
 
     void ReadSlice(uint32_t z, Voxel *buf);
 
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf);
+    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) override;
 
 
     void UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ, uint32_t dstX, uint32_t dstY, uint32_t dstZ,
-                      const Voxel *buf);
+                      const Voxel *buf) override;
 
 };
-
-enum class GridVolumeDataCodec {
-
+struct BlockIndex {
+    uint32_t x;
+    uint32_t y;
+    uint32_t z;
+    bool operator==(const BlockIndex& blockIndex) const{
+        return x == blockIndex.x && y == blockIndex.y && z == blockIndex.z;
+    }
 };
-
-using Packet = std::vector<uint8_t>;
-using Packets = std::vector<Packet>;
+template<>
+struct std::hash<BlockIndex>{
+    size_t operator()(const BlockIndex& blockIndex) const{
+        auto a = std::hash<uint32_t>()(blockIndex.x);
+        auto b = std::hash<uint32_t>()(blockIndex.y);
+        auto c = std::hash<uint32_t>()(blockIndex.z);
+        return a ^ (b + 0x9e3779b97f4a7c15LL + (c << 6) + (c >> 2));
+    }
+};
 struct BlockedGridVolumeDesc {
     uint32_t block_length;
     uint32_t padding;
     Extend3D extend;
     VoxelSpace space;
 };
-struct BlockIndex {
-    uint32_t x;
-    uint32_t y;
-    uint32_t z;
-};
-template<typename Voxel>
-class BlockedGridVolume {
+template <typename GridVolume>
+class BlockGridVolume:public GridVolume{
 public:
+    BlockGridVolume(const BlockedGridVolumeDesc&,const std::string);
+    void ReadBlock(const BlockIndex&,typename GridVolume::VoxelT* buf);
+    void WriteBlock(const BlockIndex&,const typename GridVolume::VoxelT* buf);
+};
 
+enum class GridVolumeDataCodec:int {
+    GRID_VOLUME_CODEC_NONE = 0,
+    GRID_VOLUME_CODEC_VIDEO = 1,
+    GRID_VOLUME_CODEC_BYTES = 2
+};
 
-    BlockedGridVolume(const std::string &filename);
+using Packet = std::vector<uint8_t>;
+using Packets = std::vector<Packet>;
 
-    ~BlockedGridVolume();
+struct EncodedBlockedGridVolumeDesc {
+    uint32_t block_length;
+    uint32_t padding;
+    Extend3D extend;
+    VoxelSpace space;
+    GridVolumeDataCodec codec;
+    VoxelType type;
+    VoxelFormat format;
+    char preserve[20];
+};//64
+inline constexpr int EncodedBlockedGridVolumeDescSize = 64;
+static_assert(sizeof(EncodedBlockedGridVolumeDesc) == EncodedBlockedGridVolumeDescSize,"");
 
-    const BlockedGridVolumeDesc &GetBlockedGridVolumeDesc() const;
+inline bool CheckValidation(const EncodedBlockedGridVolumeDesc& desc){
+    if(desc.block_length == 0 || desc.padding == 0 || desc.block_length <= (desc.padding << 1)){
+        return false;
+    }
+    if(desc.extend.width == 0 || desc.extend.height == 0 || desc.extend.depth == 0){
+        return false;
+    }
+    return true;
+}
 
-    void ReadBlockData(const BlockIndex &, std::vector<Voxel> &);
+class EncodedBlockedGridVolumeReaderPrivate;
+class EncodedBlockedGridVolumeReader {
+public:
+    explicit EncodedBlockedGridVolumeReader(const std::string &filename);
 
-    void ReadBlockData(const BlockIndex &, Voxel *buf);
+    ~EncodedBlockedGridVolumeReader();
 
-    void WriteBlockData(const BlockIndex &, const std::vector<Voxel> &);
+    void Close();
 
-    void WriteBlockData(const BlockIndex &, const Voxel *buf);
+    const EncodedBlockedGridVolumeDesc &GetEncodedBlockedGridVolumeDesc() const;
 
+    void ReadBlockData(const BlockIndex &, void* buf);
 
     void ReadRawBlockData(const BlockIndex &, Packet &);
 
     void ReadRawBlockData(const BlockIndex &, Packets &);
+private:
+    std::unique_ptr<EncodedBlockedGridVolumeReaderPrivate> _;
+};
+
+class EncodedBlockedGridVolumeWriterPrivate;
+class EncodedBlockedGridVolumeWriter {
+public:
+    EncodedBlockedGridVolumeWriter(const std::string &filename,const EncodedBlockedGridVolumeDesc& desc);
+
+    ~EncodedBlockedGridVolumeWriter();
+
+    const EncodedBlockedGridVolumeDesc &GetEncodedBlockedGridVolumeDesc() const;
+
+    void Close();
+
+    void WriteBlockData(const BlockIndex &, const void *buf);
 
     void WriteRawBlockData(const BlockIndex &, const Packet &);
 
     void WriteRawBlockData(const BlockIndex &, const Packets &);
+private:
+    std::unique_ptr<EncodedBlockedGridVolumeWriterPrivate> _;
 };
 
 template<typename T>
@@ -159,16 +255,13 @@ class SliceDataView {
 public:
     SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP = nullptr);
 
-
     const T *GetData();
 };
 
-
-
 template<typename T>
-class GridVolumeDataView {
+class GridDataView {
 public:
-    GridVolumeDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, T *srcP = nullptr);
+    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, T *srcP = nullptr);
 
     SliceDataView<T> ViewSliceX(int x);
 
@@ -184,19 +277,63 @@ public:
 enum class CodecDevice {
     CPU, GPU
 };
-
-template<typename T, CodecDevice device>
-class VideoCodec {
-public:
-    static bool Encode(const std::vector<SliceDataView<T>> &slices, Packet &packet);
-
-    static bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets);
-
-    static bool Decode(const Packet &packet, void* buf);
-
-    static bool Decode(const Packets &packets, void* buf);
-
+template<typename Voxel>
+struct VideoCodecVoxel{
+    static constexpr bool value = false;
 };
+#define VIDEO_CODEC_VOXEL_REGISTER(VoxelT) \
+template<>\
+struct VideoCodecVoxel<VoxelT>{\
+    static constexpr bool value = true;        \
+};
+
+VIDEO_CODEC_VOXEL_REGISTER(VoxelRU8)
+VIDEO_CODEC_VOXEL_REGISTER(VoxelRU16)
+
+template<typename T>
+inline constexpr bool VideoCodecVoxelV = VideoCodecVoxel<T>::value;
+
+template<typename T,CodecDevice device,typename V = void>
+class VideoCodec;
+
+template<typename T>
+class VideoCodec<T,CodecDevice::CPU,
+        std::enable_if_t<VideoCodecVoxelV<T>>
+        >{
+public:
+    VideoCodec() = delete;
+    inline static int MaxThreads = 8;
+    static bool Encode(const std::vector<SliceDataView<T>> &slices, Packet &packet,int maxThreads = MaxThreads);
+    static bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packet &packet,int maxThreads = MaxThreads);
+    static bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets,int maxThreads = MaxThreads);
+    static bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets,int maxThreads = MaxThreads);
+
+    static bool Decode(const Packet &packet, void* buf,int maxThreads = MaxThreads);
+
+    static bool Decode(const Packets &packets, void* buf,int maxThreads = MaxThreads);
+};
+
+template<typename T>
+class VideoCodec<T,CodecDevice::GPU,
+        std::enable_if_t<VideoCodecVoxelV<T>>
+        >{
+public:
+    VideoCodec(int GPUIndex);
+    VideoCodec(void* context);
+    bool Encode(const std::vector<SliceDataView<T>> &slices, Packet &packet);
+    bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packet &packet);
+    bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets);
+    bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets);
+
+    bool Decode(const Packet &packet, void* buf);
+
+    bool Decode(const Packets &packets, void* buf);
+};
+
+
+
+
+
 
 
 #endif // VOLUMEUTILS_VOLUME_HPP
