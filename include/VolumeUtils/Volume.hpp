@@ -16,6 +16,27 @@ enum class VoxelType :int{
 enum class VoxelFormat :int{
     NONE = 0, R = 1, RG = 2, RGB = 3, RGBA = 4
 };
+inline int GetVoxelSampleCount(VoxelFormat format){
+    int nSamples = 0;
+    switch (format) {
+        case VoxelFormat::R: nSamples = 1;
+        case VoxelFormat::RG: nSamples = 2;
+        case VoxelFormat::RGB: nSamples = 3;
+        case VoxelFormat::RGBA: nSamples = 4;
+        default: nSamples = 0;
+    }
+    return nSamples;
+}
+inline int GetVoxelBits(VoxelType type){
+    int bits = 0;
+    switch (type) {
+        case VoxelType::uint8: bits = 8;
+        case VoxelType::uint16: bits = 16;
+        case VoxelType::float32: bits = 32;
+        default: bits = 0;
+    }
+    return bits;
+}
 inline size_t GetVoxelSize(VoxelType type,VoxelFormat format){
     size_t size = 0;
     switch (type) {
@@ -186,7 +207,8 @@ enum class GridVolumeDataCodec:int {
 
 using Packet = std::vector<uint8_t>;
 using Packets = std::vector<Packet>;
-
+using EncodeWorker = std::function<bool(const void*,Packets&)>;
+using DecodeWorker = std::function<bool(const Packets&,void*)>;
 struct EncodedBlockedGridVolumeDesc {
     uint32_t block_length;
     uint32_t padding;
@@ -221,7 +243,7 @@ public:
 
     const EncodedBlockedGridVolumeDesc &GetEncodedBlockedGridVolumeDesc() const;
 
-    void ReadBlockData(const BlockIndex &, void* buf);
+    void ReadBlockData(const BlockIndex &, void* buf, DecodeWorker worker = nullptr);
 
     void ReadRawBlockData(const BlockIndex &, Packet &);
 
@@ -241,7 +263,7 @@ public:
 
     void Close();
 
-    void WriteBlockData(const BlockIndex &, const void *buf);
+    void WriteBlockData(const BlockIndex &, const void *buf, EncodeWorker worker = nullptr);
 
     void WriteRawBlockData(const BlockIndex &, const Packet &);
 
@@ -251,17 +273,40 @@ private:
 };
 
 template<typename T>
+class GridDataView;
+
+template<typename T>
 class SliceDataView {
 public:
-    SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP = nullptr);
+    SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP,std::function<size_t(int,int)> map = nullptr)
+    :sizeX(sizeX),sizeY(sizeY),ptr(srcP),map(map)
+    {
 
-    const T *GetData();
+    }
+
+    T At(int x,int y) const{
+        if(map){
+            return ptr[map(x,y)];
+        }
+        return ptr[x + y * sizeX];
+    }
+
+    const T *GetData(){
+        return ptr;
+    }
+
+    template<typename>
+    friend class GridDataView;
+private:
+    T* ptr;
+    uint32_t sizeX,sizeY;
+    std::function<size_t(int x,int y)> map;
 };
 
 template<typename T>
 class GridDataView {
 public:
-    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, T *srcP = nullptr);
+    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, T *srcP);
 
     SliceDataView<T> ViewSliceX(int x);
 
@@ -308,10 +353,14 @@ public:
     static bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets,int maxThreads = MaxThreads);
     static bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets,int maxThreads = MaxThreads);
 
-    static bool Decode(const Packet &packet, void* buf,int maxThreads = MaxThreads);
+    static bool Decode(const Packet &packet, T* buf,int maxThreads = MaxThreads);
 
-    static bool Decode(const Packets &packets, void* buf,int maxThreads = MaxThreads);
+    static bool Decode(const Packets &packets, T* buf,int maxThreads = MaxThreads);
 };
+
+bool EncodeBits(const Extend3D& shape,const void* buf,Packets& packets,int bitsPerSample,int nSamples,int maxThreads = 1);
+
+bool DecodeBits(const Packets& packets,void* buf,int bitsPerSample,int nSamples,int maxThreads = 1);
 
 template<typename T>
 class VideoCodec<T,CodecDevice::GPU,

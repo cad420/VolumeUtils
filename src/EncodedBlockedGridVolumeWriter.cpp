@@ -15,6 +15,7 @@ public:
         for(auto& packet:packets){
             size_t packet_size = packet.size();
             out.write(reinterpret_cast<char*>(&packet_size),sizeof(packet_size));
+            write_size += sizeof(packet_size);
             out.write(reinterpret_cast<const char*>(packet.data()),packet.size());
             write_size += packet_size;
         }
@@ -53,12 +54,31 @@ const EncodedBlockedGridVolumeDesc &EncodedBlockedGridVolumeWriter::GetEncodedBl
     return _->file.header.desc;
 }
 
-void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, const void *buf) {
-
+void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, const void *buf, EncodeWorker worker) {
+    if(worker == nullptr){
+        worker = [this](const void* buf,Packets& packets){
+            bool e = EncodeBits(
+                    {_->file.header.desc.block_length,
+                     _->file.header.desc.block_length,
+                     _->file.header.desc.block_length},
+                    buf,packets,
+                       GetVoxelBits(_->file.header.desc.type),
+                    GetVoxelSampleCount(_->file.header.desc.format));
+            return e;
+        };
+    }
+    Packets packets;
+    bool e = worker(buf,packets);
+    if(!e){
+        std::cerr<<"encode block failed: "<<blockIndex.x<<" "<<blockIndex.y<<" "<<blockIndex.z<<std::endl;
+        return;
+    }
+    WriteRawBlockData(blockIndex,packets);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteRawBlockData(const BlockIndex &blockIndex, const Packet &packet) {
     //use ffmpeg av_parser
+    std::cerr<<"this method is not implied at current!"<<std::endl;
 }
 
 void EncodedBlockedGridVolumeWriter::WriteRawBlockData(const BlockIndex &blockIndex, const Packets &packets) {
