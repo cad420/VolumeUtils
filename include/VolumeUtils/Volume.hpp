@@ -9,6 +9,7 @@
 #include <functional>
 #include <vector>
 #include <memory>
+#include <cassert>
 
 enum class VoxelType :int{
     unknown = 0, uint8, uint16, float32
@@ -161,6 +162,8 @@ public:
 
     void ReadSlice(uint32_t z, Voxel *buf);
 
+    void WriteSlice(uint32_t z, const Voxel* buf);
+
     size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) override;
 
 
@@ -278,45 +281,63 @@ class GridDataView;
 template<typename T>
 class SliceDataView {
 public:
-    SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP,std::function<size_t(int,int)> map = nullptr)
-    :sizeX(sizeX),sizeY(sizeY),ptr(srcP),map(map)
-    {
-
-    }
+    SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
+    :sizeX(sizeX),sizeY(sizeY),data(srcP),map(map)
+    {}
 
     T At(int x,int y) const{
         if(map){
-            return ptr[map(x,y)];
+            return map(x,y);
         }
-        return ptr[x + y * sizeX];
-    }
-
-    const T *GetData(){
-        return ptr;
+        return data[x + y * sizeX];
     }
 
     template<typename>
     friend class GridDataView;
-private:
-    T* ptr;
+
+    T* data;
     uint32_t sizeX,sizeY;
-    std::function<size_t(int x,int y)> map;
+private:
+    std::function<T(int x,int y)> map;
 };
 
 template<typename T>
 class GridDataView {
 public:
-    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, T *srcP);
+    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,const T *srcP)
+    :size_x(sizeX),size_y(sizeY),size_z(sizeZ),data(srcP)
+    {
+        assert(data && size_x && size_y && size_z);
+    }
 
-    SliceDataView<T> ViewSliceX(int x);
+    SliceDataView<T> ViewSliceX(uint32_t x){
+        std::function<size_t(int,int)> map = [x,this](int z,int y){
+            return this->At(x,size_y - 1 - y,z);
+        };
+        return SliceDataView<T>(size_z,size_y,nullptr,map);
+    }
 
-    SliceDataView<T> ViewSliceY(int y);
+    SliceDataView<T> ViewSliceY(uint32_t y){
+        std::function<size_t(int,int)> map = [y,this](int x,int z){
+            return this->At(x,y,size_z - 1 -z);
+        };
+        return SliceDataView<T>(size_x,size_z,nullptr,map);
+    }
 
-    SliceDataView<T> ViewSliceZ(int z);
+    SliceDataView<T> ViewSliceZ(uint32_t z){
+        return SliceDataView<T>(size_x,size_y,data + (size_t)z * size_x * size_y);
+    }
 
-    T At(int x, int y, int z) const;
+    const T& At(int x, int y, int z) const{
+        if(x < 0 || x >= size_x || y < 0 || y >= size_y || z < 0 || z >= size_z){
+            return T();
+        }
+        size_t idx = size_t(z) * size_x * size_y + y * size_x +x;
+        return data[idx];
+    }
 
-    const T *GetData();
+    uint32_t size_x = 0,size_y = 0,size_z = 0;
+    const T* data;
 };
 
 enum class CodecDevice {
