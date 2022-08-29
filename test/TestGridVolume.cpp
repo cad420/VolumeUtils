@@ -4,6 +4,8 @@
 #include <VolumeUtils/Volume.hpp>
 #include <iostream>
 #include <fstream>
+
+using namespace vol;
 int main(){
 
     using VoxelT = Voxel<VoxelType::uint8,VoxelFormat::R>;

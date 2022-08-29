@@ -6,6 +6,9 @@
 #include <iostream>
 #include <fstream>
 #include <cassert>
+
+VOL_BEGIN
+
 class EncodedBlockedGridVolumeWriterPrivate{
 public:
     EncodedBlockedGridVolumeFile file;
@@ -104,3 +107,5 @@ void EncodedBlockedGridVolumeWriter::Close() {
     _->WriteHeader();
     _->out.close();
 }
+
+VOL_END

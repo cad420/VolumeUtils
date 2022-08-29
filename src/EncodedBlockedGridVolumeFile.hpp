@@ -1,9 +1,5 @@
-//
-// Created by wyz on 2022/5/2.
-//
+#pragma once
 
-#ifndef VOLUMEUTILS_ENCODEDBLOCKEDGRIDVOLUMEFILE_HPP
-#define VOLUMEUTILS_ENCODEDBLOCKEDGRIDVOLUMEFILE_HPP
 #include <VolumeUtils/Volume.hpp>
 #define ENCODED_BLOCKED_GRID_VOLUME_FILE_ID 0x7ffffebfLL
 #define MAKE_VERSION(x,y,z) ((x << 32) | (y << 16) | z)
@@ -12,6 +8,7 @@
 //packet0:packet_size#packet_data#packet_size#packet_data...#packet_size#packet_data
 //packet1:packet_size#packet_data#packet_size#packet_data...#packet_size#packet_data
 //...
+VOL_BEGIN
 struct EncodedBlockedGridVolumeFile{
     struct BlockInfo{
         BlockIndex index = {INVALID_BLOCK_INDEX,INVALID_BLOCK_INDEX,INVALID_BLOCK_INDEX};
@@ -51,6 +48,4 @@ inline bool CheckValidation(const EncodedBlockedGridVolumeFile& file){
 }
 
 
-
-
-#endif //VOLUMEUTILS_ENCODEDBLOCKEDGRIDVOLUMEFILE_HPP
+VOL_END

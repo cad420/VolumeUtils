@@ -7,6 +7,9 @@
 #include <fstream>
 #include <cassert>
 #include <vector>
+
+VOL_BEGIN
+
 class EncodedBlockedGridVolumeReaderPrivate{
 public:
     EncodedBlockedGridVolumeFile file;
@@ -98,3 +101,5 @@ void EncodedBlockedGridVolumeReader::ReadRawBlockData(const BlockIndex &blockInd
     }
     _->ReadRawBlock(blockIndex,packets);
 }
+
+VOL_END

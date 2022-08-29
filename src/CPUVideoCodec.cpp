@@ -4,6 +4,9 @@
 #include <VolumeUtils/Volume.hpp>
 #include "VideoCodec.hpp"
 #include <iostream>
+
+VOL_BEGIN
+
 bool EncodeBits(const Extend3D &shape, const void *buf, Packets &packets, int bitsPerSample, int nSamples, int maxThreads) {
     HevcVideoCodecParam codec_param;
     codec_param.data = nullptr;
@@ -68,3 +71,5 @@ bool VideoCodec<T, CodecDevice::CPU, std::enable_if_t<VideoCodecVoxelV<T>>>::Dec
                                                                                     int maxThreads) {
     return false;
 }
+
+VOL_END

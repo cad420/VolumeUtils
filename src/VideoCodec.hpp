@@ -1,12 +1,10 @@
-//
-// Created by wyz on 2022/5/11.
-//
-
-#ifndef VOLUMEUTILS_VIDEOCODEC_HPP
-#define VOLUMEUTILS_VIDEOCODEC_HPP
+#pragma once
 
 #include <VolumeUtils/Volume.hpp>
 #include <vector>
+
+VOL_BEGIN
+
 struct HevcVideoCodecParam{
     static constexpr int MAX_SAMPLES = 4;
     enum CodecFormat{
@@ -25,4 +23,4 @@ struct HevcVideoCodecParam{
 
 void Encode(const HevcVideoCodecParam& param, Packets& packets);
 
-#endif //VOLUMEUTILS_VIDEOCODEC_HPP
+VOL_END

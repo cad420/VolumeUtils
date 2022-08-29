@@ -7,9 +7,12 @@
 #include <iostream>
 #include <locale.h>
 #include <cassert>
-class GridVolumePrivate{
+
+VOL_BEGIN
+
+class RawGridVolumePrivate{
 public:
-    GridVolumeDesc desc;
+    RawGridVolumeDesc desc;
     HANDLE fileHandle = nullptr;
     HANDLE mapping = nullptr;
     void* ptr = nullptr;
@@ -33,8 +36,8 @@ void PrintLastErrorMsg()
     printf( "Win32 API Last Error Code: [%d] %s\n", dw, msg );
 }
 template<typename Voxel>
-GridVolume<Voxel>::GridVolume(const GridVolumeDesc &desc, const std::string& filename) {
-    _ = std::make_unique<GridVolumePrivate>();
+RawGridVolume<Voxel>::RawGridVolume(const RawGridVolumeDesc &desc, const std::string& filename) {
+    _ = std::make_unique<RawGridVolumePrivate>();
     size_t fileSize = desc.extend.size() * sizeof(Voxel);
     try{
         if (filename.empty()) {
@@ -86,7 +89,7 @@ GridVolume<Voxel>::GridVolume(const GridVolumeDesc &desc, const std::string& fil
 }
 
 template<typename Voxel>
-GridVolume<Voxel>::~GridVolume() {
+RawGridVolume<Voxel>::~RawGridVolume() {
     if(_->mapped){
         UnmapViewOfFile(_->ptr);
         CloseHandle(_->fileHandle);
@@ -99,12 +102,12 @@ GridVolume<Voxel>::~GridVolume() {
 }
 
 template<typename Voxel>
-const GridVolumeDesc &GridVolume<Voxel>::GetGridVolumeDesc() const {
+const RawGridVolumeDesc &RawGridVolume<Voxel>::GetGridVolumeDesc() const {
     return _->desc;
 }
 
 template<typename Voxel>
-size_t GridVolume<Voxel>::ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) {
+size_t RawGridVolume<Voxel>::ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf) {
     assert(buf);
     auto w = _->desc.extend.width;
     auto h = _->desc.extend.height;
@@ -131,6 +134,7 @@ size_t GridVolume<Voxel>::ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int
     return read_count;
 }
 
+/*
 template<typename Voxel>
 void GridVolume<Voxel>::UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const Voxel *buf) {
     assert(buf);
@@ -158,14 +162,15 @@ void GridVolume<Voxel>::UpdateVoxels(uint32_t srcX, uint32_t srcY, uint32_t srcZ
         }
     }
 }
+*/
 
 template<typename Voxel>
-Voxel *GridVolume<Voxel>::GetData() {
+Voxel *RawGridVolume<Voxel>::GetData() {
     return static_cast<Voxel*>(_->ptr);
 }
 
 template<typename Voxel>
-Voxel &GridVolume<Voxel>::operator()(int x, int y, int z) {
+Voxel &RawGridVolume<Voxel>::operator()(int x, int y, int z) {
     auto w = _->desc.extend.width;
     auto h = _->desc.extend.height;
     auto d = _->desc.extend.depth;
@@ -177,7 +182,8 @@ Voxel &GridVolume<Voxel>::operator()(int x, int y, int z) {
 }
 
 
-template class GridVolume<VoxelRU8>;
-template class GridVolume<VoxelRU16>;
+template class RawGridVolume<VoxelRU8>;
+template class RawGridVolume<VoxelRU16>;
 
 
+VOL_END
