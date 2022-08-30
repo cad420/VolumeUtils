@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(VolumeUtils)
 
 file(
-        GLOB
+        GLOB_RECURSE
         SRCS
         src/*.cpp
 )
@@ -16,7 +16,9 @@ target_include_directories(
 target_compile_features(
         VolumeUtils
         PUBLIC
-        cxx_std_20
+        cxx_std_17
 )
 
 add_subdirectory(test)
+
+add_subdirectory(tools)
