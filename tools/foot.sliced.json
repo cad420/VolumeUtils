@@ -1,0 +1,19 @@
+{
+  "info": {
+    "version": [],
+    "processor": "",
+    "id": ""
+  },
+  "sliced": {
+    "slice_format": ".tif",
+    "volume_name": "foot",
+    "voxel_type": "uint8",
+    "voxel_format": "r",
+    "extend": [512,512,512],
+    "space": [0.01,0.01,0.01],
+    "axis": 2,
+    "prefix": "",
+    "postfix": "",
+    "setw": 0
+  }
+}

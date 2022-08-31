@@ -12,6 +12,8 @@ target_include_directories(
         VolumeUtils
         PUBLIC
         ${PROJECT_SOURCE_DIR}/include
+        ${PROJECT_SOURCE_DIR}/deps/source
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/include
 )
 target_compile_features(
         VolumeUtils

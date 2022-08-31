@@ -3,45 +3,63 @@
 
 VOL_BEGIN
 
-class RawGridVolumeFile{
-    std::pair<RawGridVolumeDesc,bool> ExtractDescFromNameStr(const std::string& filename){
+
+class RawGridVolumeFile {
+    std::pair<RawGridVolumeDesc, bool> ExtractDescFromNameStr(const std::string &filename) {
 
     }
-    std::pair<RawGridVolumeDesc,bool> ExtractDescFromFile(const std::string& filename){
 
+    std::pair<RawGridVolumeDesc, bool> ExtractDescFromFile(const std::string &filename) {
+        // read from json file
     }
+
 public:
-    RawGridVolumeFile(const std::string& filename){
+    explicit RawGridVolumeFile(const std::string &filename) {
         auto [desc0, ok0] = ExtractDescFromNameStr(filename);
-        if(ok0){
+        if (ok0) {
             this->desc = desc0;
-        }
-        else{
+        } else {
             auto [desc1, ok1] = ExtractDescFromFile(filename);
-            if(ok1){
+            if (ok1) {
                 this->desc = desc1;
-            }
-            else{
+            } else {
                 throw VolumeFileOpenError("RawGridVolumeFile Open Error: " + filename);
             }
         }
     }
-    const RawGridVolumeDesc& GetVolumeDesc() const{
+
+    [[nodiscard]]
+    const RawGridVolumeDesc &GetVolumeDesc() const {
         return desc;
     }
-    const std::string& GetDataPath() const{
+
+    [[nodiscard]]
+    const std::string &GetDataPath() const {
         return data_path;
     }
+
 private:
     RawGridVolumeDesc desc;
     std::string data_path;
 };
 
-struct RawGridVolumeReaderPrivate{
-    RawGridVolumeDesc desc;
-    //using mapping file will be better, but...
+class RawGridVolumeReaderPrivate {
+public:
+
 
 };
+
+class RawGridVolumeReaderPrivateIOStreamImpl : public RawGridVolumeReaderPrivate {
+public:
+
+};
+
+//using mapping file will be better, but...
+class RawGridVolumeReaderPrivateMappingFileImpl : public RawGridVolumeReaderPrivate {
+public:
+
+};
+
 
 RawGridVolumeReader::RawGridVolumeReader(const std::string &filename) {
 
@@ -66,7 +84,19 @@ const RawGridVolumeDesc &RawGridVolumeReader::GetVolumeDesc() const noexcept {
     return {};
 }
 
-struct RawGridVolumeWriterPrivate{
+class RawGridVolumeWriterPrivate{
+public:
+
+};
+
+class RawGridVolumeWriterPrivateIOStreamImpl : public RawGridVolumeReaderPrivate {
+public:
+
+};
+
+//using mapping file will be better, but...
+class RawGridVolumeWriterPrivateMappingFileImpl : public RawGridVolumeReaderPrivate {
+public:
 
 };
 
@@ -89,6 +119,8 @@ void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX
 void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept {
 
 }
+
+
 
 
 VOL_END
