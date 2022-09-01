@@ -584,6 +584,7 @@ public:
     /**
      * @brief If set use cached, reader will first try to read data from cache buffer and read entire slice if can,
      * so it will cost more memory if random access but will be more efficient for read by sequence for huge volume data.
+     * @note Internal implement for cache is simple, user can turn off cache and create cache by user self.
      */
     void SetUseCached(bool useCached);
 
@@ -625,9 +626,9 @@ protected:
 };
 
 struct BlockIndex {
-    uint32_t x;
-    uint32_t y;
-    uint32_t z;
+    int x;
+    int y;
+    int z;
     bool operator==(const BlockIndex& blockIndex) const{
         return x == blockIndex.x && y == blockIndex.y && z == blockIndex.z;
     }
@@ -635,6 +636,7 @@ struct BlockIndex {
 
 struct BlockedGridVolumeDesc : RawGridVolumeDesc{
     uint32_t block_length;
+    // physical stored block size = block_length + 2 * padding
     uint32_t padding;
 };
 
@@ -683,13 +685,13 @@ private:
 enum class GridVolumeDataCodec:int {
     GRID_VOLUME_CODEC_NONE = 0,
     GRID_VOLUME_CODEC_VIDEO = 1,
-    GRID_VOLUME_CODEC_BYTES = 2
+    GRID_VOLUME_CODEC_BITS = 2
 };
 
 using Packet = std::vector<uint8_t>;
 using Packets = std::vector<Packet>;
-using EncodeWorker = std::function<bool(const void*,Packets&)>;
-using DecodeWorker = std::function<bool(const Packets&,void*)>;
+using EncodeWorker = std::function<size_t(const void*, Packets&)>;
+using DecodeWorker = std::function<size_t(const Packets&, void*)>;
 
 struct EncodedGridVolumeDesc : RawGridVolumeDesc{
     GridVolumeDataCodec codec;
@@ -734,7 +736,6 @@ private:
 //todo virtual derived?
 struct EncodedBlockedGridVolumeDesc : BlockedGridVolumeDesc{
     GridVolumeDataCodec codec;
-    VoxelInfo voxel;
     char preserve[20];
 };//64
 
@@ -773,12 +774,26 @@ public:
     const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
 public:
+    /**
+     * @brief Read one block data into buf with size, it will use default(cpu) and suit codec for decoding.
+     */
     size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
 
+    /**
+     * @brief This may be some slow but support more freedom.
+     */
     size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
 
+    /**
+     * @param size should greater to equal to block bytes.
+     * @note read data format is : [(packet_size)(packet_data)][(packet_size)(packet_data)]...
+     * @return Exactly filled byte count.
+     */
     size_t ReadEncodedBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
 
+    /**
+     * @return packets' bytes count
+     */
     size_t ReadEncodedBlockData(const BlockIndex& blockIndex, Packets& packets) noexcept;
 
 private:
@@ -789,6 +804,8 @@ class EncodedBlockedGridVolumeWriterPrivate;
 class EncodedBlockedGridVolumeWriter : public VolumeWriterInterface<EncodedBlockedGridVolumeDesc>{
 public:
     EncodedBlockedGridVolumeWriter(const std::string& filename);
+
+    EncodedBlockedGridVolumeWriter(const std::string& filename, const EncodedBlockedGridVolumeDesc& desc);
 
     ~EncodedBlockedGridVolumeWriter();
 
@@ -896,14 +913,19 @@ struct VoxelVideoCodec<VoxelT,device>{\
 template<typename T, CodecDevice device>
 inline constexpr bool VoxelVideoCodecV = VoxelVideoCodec<T,device>::Value;
 
+// one voxel type map to one specific codec method and format
 Register_VoxelVideoCodec(VoxelRU8,CodecDevice::CPU)
 Register_VoxelVideoCodec(VoxelRU8,CodecDevice::GPU)
 Register_VoxelVideoCodec(VoxelRU16,CodecDevice::CPU)
 
 class CVolumeVideoCodecInterface{
 public:
+    virtual ~CVolumeVideoCodecInterface() = default;
+
     virtual bool Encode(const void* buf, size_t size, Packets& packets) noexcept = 0;
+
     virtual bool Decode(const Packets &packets, void* buf, size_t size) noexcept = 0;
+
 };
 
 template<typename T>
@@ -913,6 +935,7 @@ public:
     virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) = 0;
     virtual bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) = 0;
     virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) = 0;
+
 };
 
 template<typename T,CodecDevice device,typename V = void>
@@ -922,7 +945,7 @@ template<typename T>
 class VolumeVideoCodec<T,CodecDevice::CPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
-    explicit VolumeVideoCodec(int threadCount);
+    explicit VolumeVideoCodec(int threadCount = 1);
 
     bool Encode(const void* buf, size_t size, Packets& packets) noexcept override;
     bool Decode(const Packets &packets, void* buf, size_t size) noexcept override;
@@ -937,7 +960,7 @@ template<typename T>
 class VolumeVideoCodec<T,CodecDevice::GPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
-    explicit VolumeVideoCodec(int GPUIndex);
+    explicit VolumeVideoCodec(int GPUIndex = 0);
     //cuda context
     explicit VolumeVideoCodec(void* context);
 
@@ -1049,9 +1072,9 @@ VOL_END
 template<>
 struct std::hash<vol::BlockIndex>{
     size_t operator()(const vol::BlockIndex& blockIndex) const{
-        auto a = std::hash<uint32_t>()(blockIndex.x);
-        auto b = std::hash<uint32_t>()(blockIndex.y);
-        auto c = std::hash<uint32_t>()(blockIndex.z);
+        auto a = std::hash<int>()(blockIndex.x);
+        auto b = std::hash<int>()(blockIndex.y);
+        auto c = std::hash<int>()(blockIndex.z);
         return a ^ (b + 0x9e3779b97f4a7c15LL + (c << 6) + (c >> 2));
     }
 };

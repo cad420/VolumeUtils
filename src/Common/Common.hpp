@@ -13,6 +13,13 @@ inline VoxelType StrToVoxelType(std::string_view str){
     return VoxelType::unknown;
 }
 
+inline GridVolumeDataCodec StrToGridVolumeDataCodec(std::string_view str){
+    auto s = ConvertStrToLower(str);
+    if(s == "video") return GridVolumeDataCodec::GRID_VOLUME_CODEC_VIDEO;
+    if(s == "bits") return GridVolumeDataCodec::GRID_VOLUME_CODEC_BITS;
+    return GridVolumeDataCodec::GRID_VOLUME_CODEC_NONE;
+}
+
 inline VoxelFormat StrToVoxelFormat(std::string_view str){
     auto s = ConvertStrToLower(str);
     if(s == "r") return VoxelFormat::R;

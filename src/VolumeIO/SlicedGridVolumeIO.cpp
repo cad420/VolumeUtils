@@ -261,6 +261,7 @@ public:
 
 
 SlicedGridVolumeReader::SlicedGridVolumeReader(const std::string &filename) {
+    _ = std::make_unique<SlicedGridVolumeReaderPrivate>();
     SlicedGridVolumeFile file;
     if(!file.Open(filename)){
         throw VolumeFileOpenError("SlicedGridVolumeFile open failed : " + filename);
@@ -408,7 +409,7 @@ size_t SlicedGridVolumeReader::ReadSliceData(int sliceIndex, SliceReadFunc reade
         for(int col = 0; col < slice_w; col++){
             size_t src_offset = ((size_t)row * slice_w + col) * voxel_size;
             auto filled = reader(row, col, src_ptr + src_offset, voxel_size);
-            if(filled == 0) break;
+//            if(filled == 0) break;
             read_size += filled;
         }
     }
@@ -487,7 +488,7 @@ size_t SlicedGridVolumeReader::ReadSliceData(int sliceIndex, int srcX, int srcY,
             if(!valid_pos(row, col)) continue;
             size_t src_offset = ((size_t)row * slice_w + col) * voxel_size;
             auto filled = reader(col - srcX, row - srcY, src_ptr + src_offset, voxel_size);
-            if(filled == 0) break;
+//            if(filled == 0) break;
             read_size += filled;
         }
     }
