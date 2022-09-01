@@ -23,7 +23,7 @@ size_t EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int sr
 
 }
 
-size_t EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept {
+size_t EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept {
 
 }
 
@@ -31,7 +31,7 @@ size_t EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockInde
 
 }
 
-size_t EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex, VolumeReadWriteFunc reader) noexcept {
+size_t EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex, VolumeReadFunc reader) noexcept {
 
 }
 
@@ -60,7 +60,11 @@ void EncodedBlockedGridVolumeWriter::SetVolumeDesc(const EncodedBlockedGridVolum
 
 }
 
-void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept {
+const EncodedBlockedGridVolumeDesc &EncodedBlockedGridVolumeWriter::GetVolumeDesc() const noexcept {
+    return {};
+}
+
+void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept {
 
 }
 
@@ -68,7 +72,7 @@ void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int src
 
 }
 
-void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, VolumeReadWriteFunc writer) noexcept {
+void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, VolumeWriteFunc writer) noexcept {
 
 }
 
@@ -83,5 +87,7 @@ void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blo
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const void *buf, size_t size) noexcept {
 
 }
+
+
 
 VOL_END

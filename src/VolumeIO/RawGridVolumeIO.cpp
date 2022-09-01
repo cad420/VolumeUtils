@@ -74,7 +74,7 @@ size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dst
     return 0;
 }
 
-size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept {
+size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept {
 
     return 0;
 }
@@ -112,11 +112,15 @@ void RawGridVolumeWriter::SetVolumeDesc(const RawGridVolumeDesc &) noexcept {
 
 }
 
+const RawGridVolumeDesc &RawGridVolumeWriter::GetVolumeDesc() const noexcept {
+    return {};
+}
+
 void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept {
 
 }
 
-void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept {
+void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept {
 
 }
 

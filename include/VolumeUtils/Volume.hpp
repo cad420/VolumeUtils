@@ -5,7 +5,7 @@
 // DEBUG
 #ifndef NDEBUG
 #define VOL_DEBUG
-#define VOL_WHEN_DEBUG(op) do{op;}while(false);
+#define VOL_WHEN_DEBUG(op) do{ op; }while(false);
 #else
 #define VOL_WHEN_DEBUG(op) do{}while(false);
 #endif
@@ -28,6 +28,8 @@
 #include <cassert>
 #include <stdexcept>
 #include <ostream>
+#include <sstream>
+#include <iomanip>
 
 VOL_BEGIN
 
@@ -351,7 +353,8 @@ public:
 };
 
 
-using VolumeReadWriteFunc = std::function<size_t(int dx, int dy, int dz, const void* src, size_t ele_size)>;
+using VolumeReadFunc = std::function<size_t(int dx, int dy, int dz, const void* src, size_t ele_size)>;
+using VolumeWriteFunc = std::function<void(int dx, int dy, int dz, void* dst, size_t ele_size)>;
 
 class CVolumeReaderInterface{
 public:
@@ -359,7 +362,7 @@ public:
      * @param size memory buffer length for buf, maybe less than bytes count for the read region or more than are both ok.
      */
     virtual size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept = 0;
-    virtual size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept = 0;
+    virtual size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept = 0;
 };
 
 /**
@@ -375,7 +378,7 @@ public:
 class CVolumeWriterInterface{
 public:
     virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept = 0;
-    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept = 0;
+    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept = 0;
 };
 
 /**
@@ -386,6 +389,7 @@ class VolumeWriterInterface : public CVolumeWriterInterface{
 public:
     virtual void SetVolumeDesc(const VolumeDescT&) noexcept = 0;
 
+    virtual const VolumeDescT& GetVolumeDesc() const noexcept = 0;
 };
 
 inline constexpr const char* InvalidVolumeName = "InvalidVolume";
@@ -472,7 +476,7 @@ public:
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept override;
+    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
 private:
@@ -488,9 +492,11 @@ public:
 public:
     void SetVolumeDesc(const RawGridVolumeDesc&) noexcept override;
 
+    const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
 private:
     std::unique_ptr<RawGridVolumeWriterPrivate> _;
 };
@@ -506,6 +512,14 @@ struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     std::string prefix;
     std::string postfix;
     int setw = 0;
+
+    void Generate() noexcept{
+        name_generator = [this](uint32_t idx){
+            std::stringstream ss;
+            ss << prefix << std::setw(setw) << std::to_string(idx) << postfix;
+            return ss.str();
+        };
+    }
 };
 
 bool CheckValidation(SliceAxis axis){
@@ -532,8 +546,8 @@ protected:
     std::unique_ptr<SlicedGridVolumePrivate> _;
 };
 
-using SliceReadWriteFunc = std::function<size_t(int dx, int dy, const void* src, size_t ele_size)>;
-
+using SliceReadFunc = std::function<size_t(int dx, int dy, const void* src, size_t ele_size)>;
+using SliceWriteFunc = std::function<void(int dx, int dy, void* dst, size_t ele_size)>;
 class SlicedGridVolumeReaderPrivate;
 class SlicedGridVolumeReader : public VolumeReaderInterface<SlicedGridVolumeDesc>{
 public:
@@ -545,7 +559,7 @@ public:
 
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept override;
+    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 public:
@@ -562,11 +576,11 @@ public:
     /**
      * @brief This method is mainly to read slice data store/map to a non-linear buffer.
      */
-    size_t ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadWriteFunc reader) noexcept;
+    size_t ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadFunc reader) noexcept;
 
     size_t ReadSliceData(int sliceIndex, void* buf, size_t size) noexcept;
 
-    size_t ReadSliceData(int sliceIndex, SliceReadWriteFunc reader) noexcept;
+    size_t ReadSliceData(int sliceIndex, SliceReadFunc reader) noexcept;
     /**
      * @brief If set use cached, reader will first try to read data from cache buffer and read entire slice if can,
      * so it will cost more memory if random access but will be more efficient for read by sequence for huge volume data.
@@ -580,29 +594,29 @@ protected:
 };
 
 class SlicedGridVolumeWriterPrivate;
-class SlicedGridVolumeWriter : public VolumeWriterInterface<SlicedGridVolumeWriter>{
+class SlicedGridVolumeWriter : public VolumeWriterInterface<SlicedGridVolumeDesc>{
 public:
     SlicedGridVolumeWriter(const std::string& filename);
 
     ~SlicedGridVolumeWriter();
 
 public:
-    void SetVolumeDesc(const SlicedGridVolumeWriter&) noexcept override;
+    void SetVolumeDesc(const SlicedGridVolumeDesc&) noexcept override;
+
+    const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
 
 public:
     void WriteSliceData(int sliceIndex, const void* buf, size_t size) noexcept;
 
-    void WriteSliceData(int sliceIndex, SliceReadWriteFunc writer) noexcept;
+    void WriteSliceData(int sliceIndex, SliceWriteFunc writer) noexcept;
 
     void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, const void* buf, size_t size) noexcept;
 
-    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadWriteFunc writer) noexcept;
-
-    void Flush(int sliceIndex) noexcept;
+    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceWriteFunc writer) noexcept;
 
     void Flush() noexcept;
 
@@ -641,11 +655,11 @@ class BlockedGridVolumeReaderPrivate;
 class BlockedGridVolumeReader : public VolumeReaderInterface<BlockedGridVolumeDesc>{
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept override;
+    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
     const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 public:
     size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
-    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadWriteFunc reader) noexcept;
+    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
 
 private:
     std::unique_ptr<BlockedGridVolumeReaderPrivate> _;
@@ -656,11 +670,12 @@ class BlockedGridVolumeWriterPrivate;
 class BlockedGridVolumeWriter : public VolumeWriterInterface<BlockedGridVolumeDesc>{
 public:
     void SetVolumeDesc(const BlockedGridVolumeDesc&) noexcept override;
+    const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
 public:
     void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
-    void WriteBlockData(const BlockIndex& blockIndex, VolumeReadWriteFunc writer) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
 private:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
 };
@@ -693,7 +708,7 @@ public:
     // select cpu or gpu...
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept override;
+    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
     const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 public:
     size_t ReadEncodedData(void* buf, size_t size) noexcept;
@@ -706,8 +721,9 @@ class EncodedGridVolumeWriterPrivate;
 class EncodedGridVolumeWriter : public VolumeWriterInterface<EncodedGridVolumeDesc>{
 public:
     void SetVolumeDesc(const EncodedGridVolumeDesc&) noexcept override;
+    const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
 public:
     void WriteEncodedData(const void* buf, size_t size) noexcept;
     void WriteEncodedData(const Packets& packets) noexcept;
@@ -752,14 +768,14 @@ public:
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc reader) noexcept override;
+    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
 public:
     size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
 
-    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadWriteFunc reader) noexcept;
+    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
 
     size_t ReadEncodedBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
 
@@ -779,14 +795,16 @@ public:
 public:
     void SetVolumeDesc(const EncodedBlockedGridVolumeDesc&) noexcept override;
 
+    const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
 
 public:
     void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
 
-    void WriteBlockData(const BlockIndex& blockIndex, VolumeReadWriteFunc writer) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
 
     void WriteEncodedBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
 

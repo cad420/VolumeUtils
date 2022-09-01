@@ -15,6 +15,12 @@ void CopyNBits(const uint8_t* src, uint8_t* dst, size_t bits){
 }
 
 template<>
+void CopyBits<1>(const uint8_t* src, uint8_t* dst){
+    *dst = *src;
+}
+
+
+template<>
 void CopyBits<2>(const uint8_t* src, uint8_t* dst){
     auto psrc = reinterpret_cast<const uint16_t*>(src);
     auto pdst = reinterpret_cast<uint16_t*>(dst);
@@ -39,6 +45,8 @@ void CopyBits<8>(const uint8_t* src, uint8_t* dst){
 auto GetCopyBitsFunc(size_t voxel_size){
     std::function<void(const uint8_t*,uint8_t*)> f;
     switch (voxel_size) {
+        case 1 : f = CopyBits<1>;
+            break;
         case 2 : f = CopyBits<2>;
             break;
         case 4 : f = CopyBits<4>;
