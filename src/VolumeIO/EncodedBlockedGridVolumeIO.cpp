@@ -53,6 +53,7 @@ namespace{
             if(!fs.is_open()){
                 return false;
             }
+            fs.seekg(-static_cast<int64_t>(HeaderSize), std::ios::end);
             fs.read(reinterpret_cast<char*>(&header), HeaderSize);
             fs.seekg(header.block_info_offset, std::ios::beg);
             std::vector<BlockInfo> block_infos(header.block_info_count);
@@ -63,9 +64,26 @@ namespace{
             return true;
         }
         void SaveMetaFile(){
+            if(!fs.is_open()) return;
+            fs.seekp(0, std::ios::end);
+            // write BlockInfos
+            for(auto& b : mp){
+                fs.write(reinterpret_cast<const char*>(&b.second),BlockInfoSize);
+            }
+            // write Header in the file end
 
+            fs.write(reinterpret_cast<const char*>(&header), HeaderSize);
+
+            fs.close();
         }
     public:
+        EncodedBlockedGridVolumeFile() = default;
+
+        ~EncodedBlockedGridVolumeFile(){
+            SaveMetaFile();
+            Close();
+        }
+
         bool Open(const std::string& filename){
             io.open(filename, std::ios::in);
             if(!io.is_open()){
@@ -95,15 +113,38 @@ namespace{
             desc.padding = encoded_block.count(padding) == 0 ? 0 : (int)j[padding];
             desc.codec = StrToGridVolumeDataCodec(encoded_block.count(volume_codec) == 0 ? "none" : j.at(volume_codec));
 
-            meta_data_path = encoded_block.count(data_path) == 0 ? "none" : j.at(data_path);
+            desc.data_path = encoded_block.count(data_path) == 0 ? "none" : j.at(data_path);
 
-            auto ret = OpenMetaFile(meta_data_path);
+            auto ret = OpenMetaFile(desc.data_path);
 
             return ret;
         }
 
         bool Open(const std::string& filename,const EncodedBlockedGridVolumeDesc& volume_desc){
+            io.open(filename, std::ios::out);
+            if(!io.is_open()) return false;
+            if(CheckValidation(volume_desc)) return false;
+            this->desc = volume_desc;
 
+            nlohmann::json j;
+
+            auto encoded_block = j[encoded_blocked];
+            encoded_block[volume_name] = desc.volume_name;
+            encoded_block[voxel_type] = VoxelTypeToStr(desc.voxel_info.type);
+            encoded_block[voxel_format] = VoxelFormatToStr(desc.voxel_info.format);
+            encoded_block[extend] = {desc.extend.width, desc.extend.height, desc.extend.depth};
+            encoded_block[space] = {desc.space.x, desc.space.y, desc.space.z};
+            encoded_block[block_length] = desc.block_length;
+            encoded_block[padding] = desc.padding;
+            encoded_block[volume_codec] = VolumeCodecToStr(desc.codec);
+            encoded_block[data_path] = desc.data_path;
+
+            io << j;
+            io.flush();
+
+            fs.open(desc.data_path, std::ios::out | std::ios::binary);
+            if(!fs.is_open()) return false;
+            return true;
         }
 
         const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const{
@@ -126,6 +167,7 @@ namespace{
         }
 
         void WriteBlock(const BlockIndex& blockIndex, const void* buf, size_t size, size_t packet_count = 0){
+            if(!fs.is_open()) return;
             if(mp.count(blockIndex) != 0) return;
             fs.seekp(0, std::ios::end);
             auto offset = fs.tellp();
@@ -136,30 +178,20 @@ namespace{
             block.packet_count = packet_count;
             fs.write(reinterpret_cast<const char*>(buf), size);
         }
+        void Close(){
+            if(fs.is_open())
+                fs.close();
+            if(io.is_open())
+                io.close();
+        }
     private:
         EncodedBlockedGridVolumeDesc desc;
         std::fstream io;
-        std::string meta_data_path;
 
         std::unordered_map<BlockIndex, BlockInfo> mp;
         Header header;
         std::fstream fs;
     };
-}
-
-std::unique_ptr<CVolumeVideoCodecInterface> CreateCPUVideoCodec(const VoxelInfo& voxel){
-    auto [type, format] = voxel;
-    if(type == VoxelType::uint8){
-        if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>();
-        }
-    }
-    else if(type == VoxelType::uint16){
-        if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>();
-        }
-    }
-    return nullptr;
 }
 
 class EncodedBlockedGridVolumeReaderPrivate{
@@ -195,6 +227,10 @@ EncodedBlockedGridVolumeReader::EncodedBlockedGridVolumeReader(const std::string
     _->block_bytes = buffer_length * buffer_length * buffer_length * GetVoxelSize(_->desc.voxel_info);
     _->block_data.resize(_->block_bytes, 0);
 
+    _->video_codec = CreateCPUVolumeVideoCodecByVoxel(_->desc.voxel_info);
+    if(!_->video_codec){
+        throw VolumeFileContextError("Failed to create volume video codec");
+    }
 }
 
 EncodedBlockedGridVolumeReader::~EncodedBlockedGridVolumeReader() {
@@ -253,7 +289,7 @@ size_t EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int sr
         for(int z = beg_z; z < end_z; z++){
             for(int y = beg_y; y < end_y; y++){
                 for(int x = beg_x; x < end_x; x++){
-                    size_t src_offset = ((size_t)buffer_length * buffer_length * z + buffer_length * y + x) * voxel_size;
+                    size_t src_offset = ((size_t)buffer_length * buffer_length * (z - beg_z) + buffer_length * (y - beg_y) + (x - beg_x)) * voxel_size;
                     read_size += reader(x - srcX, y - srcY, z - srcZ, src_ptr + src_offset, voxel_size);
                 }
             }
@@ -282,7 +318,8 @@ size_t EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockInde
     Packets packets;
     ReadEncodedBlockData(blockIndex, packets);
     // invoke ReadBlockData next is ok but may loss efficient
-    return _->video_codec->Decode(packets, buf, size);
+    const uint32_t bl = _->desc.block_length + 2 * _->desc.padding;
+    return _->video_codec->Decode({bl, bl, bl}, packets, buf, size);
 }
 
 size_t EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex, VolumeReadFunc reader) noexcept {
@@ -341,48 +378,173 @@ size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &bl
 
 class EncodedBlockedGridVolumeWriterPrivate{
 public:
+    EncodedBlockedGridVolumeDesc desc;
+    std::unique_ptr<CVolumeVideoCodecInterface> video_codec;
+    EncodedBlockedGridVolumeFile file;
 
+    size_t block_bytes;
+    std::vector<uint8_t> block_data;
+
+    bool CheckValidation(const BlockIndex& blockIndex) const{
+        const auto block_length = desc.block_length;
+        const auto block_x = (desc.extend.width + block_length - 1) / block_length;
+        const auto block_y = (desc.extend.height + block_length - 1) / block_length;
+        const auto block_z = (desc.extend.depth + block_length - 1) / block_length;
+        return blockIndex.x >= 0 && blockIndex.x < block_x
+               && blockIndex.y >= 0 && blockIndex.y < block_y
+               && blockIndex.z >= 0 && blockIndex.z < block_z;
+    }
 };
 
-EncodedBlockedGridVolumeWriter::EncodedBlockedGridVolumeWriter(const std::string &filename) {
+EncodedBlockedGridVolumeWriter::EncodedBlockedGridVolumeWriter(const std::string &filename, const EncodedBlockedGridVolumeDesc &desc) {
+    _ = std::make_unique<EncodedBlockedGridVolumeWriterPrivate>();
+    if(!CheckValidation(desc)){
+        throw VolumeFileContextError("Invalid EncodedBlockedGridVolumeDesc");
+    }
+    if(!_->file.Open(filename, desc)){
+        throw VolumeFileOpenError("EncodedBlockedGridVolumeFile open failed : " + filename);
+    }
 
+    _->desc = _->file.GetVolumeDesc();
+    const size_t buffer_length = _->desc.block_length + _->desc.padding * 2;
+    _->block_bytes = buffer_length * buffer_length * buffer_length * GetVoxelSize(_->desc.voxel_info);
+    _->block_data.resize(_->block_bytes, 0);
+
+    _->video_codec = CreateCPUVolumeVideoCodecByVoxel(_->desc.voxel_info);
+    if(!_->video_codec){
+        throw VolumeFileContextError("Failed to create volume video codec");
+    }
 }
 
 EncodedBlockedGridVolumeWriter::~EncodedBlockedGridVolumeWriter() {
 
 }
 
-void EncodedBlockedGridVolumeWriter::SetVolumeDesc(const EncodedBlockedGridVolumeDesc &) noexcept {
-
-}
-
 const EncodedBlockedGridVolumeDesc &EncodedBlockedGridVolumeWriter::GetVolumeDesc() const noexcept {
-    return {};
+    return _->desc;
 }
 
 void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept {
+    if(srcX >= dstX || srcY >= dstY || srcZ >= dstZ) return;
+    if(!writer) return;
 
+    const int block_length = _->desc.block_length;
+    const int padding = _->desc.padding;
+    const int buffer_length = block_length + padding * 2;
+    auto get_index = [block_length](int x){
+        if(x >= 0) return (x + block_length - 1) / block_length;
+        return (x - block_length) / block_length;
+    };
+
+    const int beg_block_x = get_index(srcX);
+    const int end_block_x = get_index(dstX) + 1;
+    const int beg_block_y = get_index(srcY);
+    const int end_block_y = get_index(dstY) + 1;
+    const int beg_block_z = get_index(srcZ);
+    const int end_block_z = get_index(dstZ) + 1;
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    const auto dst_ptr = _->block_data.data();
+    auto fill_writer = [&](const BlockIndex& block_idx){
+        assert(_->CheckValidation(block_idx));
+        const int beg_x = block_idx.x * block_length - padding;
+        const int end_x = beg_x + padding + block_length + padding;
+        const int beg_y = block_idx.y * block_length - padding;
+        const int end_y = beg_y + padding + block_length + padding;
+        const int beg_z = block_idx.z * block_length - padding;
+        const int end_z = beg_z + padding + block_length + padding;
+        for(int z = beg_z; z < end_z; z++){
+            for(int y = beg_y; y < end_y; y++){
+                for(int x = beg_x; x < end_x; x++){
+                    size_t dst_offset = ((size_t)buffer_length * buffer_length * (z - beg_z) + buffer_length * (y - beg_y) + (x - beg_x)) * voxel_size;
+                    writer(x - srcX, y - srcY, z - srcZ, dst_ptr + dst_offset, voxel_size);
+                }
+            }
+        }
+    };
+
+    for(int block_z = beg_block_z; block_z < end_block_z; block_z++){
+        for(int block_y = beg_block_y; block_y < end_block_y; block_y++){
+            for(int block_x = beg_block_x; block_x < end_block_x; block_x++){
+                const BlockIndex block_idx = {block_x, block_y, block_z};
+                fill_writer(block_idx);
+                WriteBlockData(block_idx,_->block_data.data(),_->block_bytes);
+            }
+        }
+    }
 }
 
 void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept {
-
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    auto copy_func = GetCopyBitsFunc(voxel_size);
+    return WriteVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
+                           [src_ptr = reinterpret_cast<const uint8_t*>(buf), buf_size = size,
+                            width = dstX - srcX, height = dstY - srcY, &copy_func]
+                            (int dx, int dy, int dz, void* dst, size_t ele_size){
+            size_t src_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
+            if(src_offset >= buf_size) return;
+            copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
+    });
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, VolumeWriteFunc writer) noexcept {
-
+    if(!_->CheckValidation(blockIndex)) return;
+    if(!writer) return;
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    const int block_length = _->desc.block_length;
+    const int padding = _->desc.padding;
+    const int buffer_length = block_length + 2 * padding;
+    auto dst_ptr = _->block_data.data();
+    for(int z = 0; z < buffer_length; z++){
+        for(int y = 0; y < buffer_length; y++){
+            for(int x = 0; x < buffer_length; x++){
+                size_t dst_offset = ((size_t)buffer_length * buffer_length * z + buffer_length * y + x) * voxel_size;
+                writer(x, y, z, dst_ptr + dst_offset, voxel_size);
+            }
+        }
+    }
+    WriteBlockData(blockIndex, _->block_data.data(), _->block_bytes);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, const void *buf, size_t size) noexcept {
-
+    if(!_->CheckValidation(blockIndex)) return;
+    if(!buf || !size) return;
+    Packets packets;
+    const uint32_t bl = _->desc.block_length + 2 * _->desc.padding;
+    _->video_codec->Encode({bl, bl, bl}, buf, size, packets);
+    WriteEncodedBlockData(blockIndex, packets);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const Packets &packets) noexcept {
-
+    if(!_->CheckValidation(blockIndex)) return;
+    size_t buf_size = packets.size() * 8;
+    for(auto& packet : packets) buf_size += packet.size();
+    uint8_t* buf = nullptr;
+    std::vector<uint8_t> tmp;
+    if(buf_size > _->block_bytes){
+        tmp.resize(buf_size);
+        buf = tmp.data();
+    }
+    else{
+        buf = _->block_data.data();
+    }
+    size_t offset = 0;
+    for(auto& packet : packets){
+        auto p = reinterpret_cast<size_t*>(buf);
+        p[offset] = packet.size();
+        offset += 8;
+        std::memcpy(buf + offset, packet.data(), packet.size());
+        offset += packet.size();
+    }
+    assert(offset == buf_size);
+    WriteEncodedBlockData(blockIndex, buf, offset);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const void *buf, size_t size) noexcept {
-
+    if(!_->CheckValidation(blockIndex)) return;
+    if(!buf || !size) return;
+    _->file.WriteBlock(blockIndex, buf, size);
 }
+
 
 
 

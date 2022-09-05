@@ -212,7 +212,9 @@ public:
     void SetVolumeDesc(const SlicedGridVolumeDesc& volume_desc){
         desc = volume_desc;
 
-        nlohmann::json j;
+        nlohmann::json jj;
+
+        auto j = jj[sliced];
 
         j[slice_format] = slice_data_format;
         j[volume_name]  = desc.volume_name;
@@ -226,7 +228,7 @@ public:
         j[setw]         = desc.setw;
 
         assert(out.is_open());
-        out << j;
+        out << jj;
         out.flush();
     }
 
@@ -532,12 +534,20 @@ public:
 
 constexpr const char* DefaultSliceDataFormat = ".tif";
 
-SlicedGridVolumeWriter::SlicedGridVolumeWriter(const std::string &filename) {
+SlicedGridVolumeWriter::SlicedGridVolumeWriter(const std::string &filename, const SlicedGridVolumeDesc& desc) {
+    if(!CheckValidation(desc)){
+        throw VolumeFileContextError("Invalid SlicedGridVolumeDesc");
+    }
+    _->desc = desc;
     _->file.Save(filename);
+    _->file.SetVolumeDesc(desc);
     _->file.SetSliceDataFormat(DefaultSliceDataFormat);
 
     _->slice_io_wrapper = CreateSliceIOWrapperByExt(DefaultSliceDataFormat);
 
+    _->slice_bytes = GetVoxelSize(_->desc.voxel_info) * _->desc.extend.width * _->desc.extend.height;
+    _->slice_data.resize(_->slice_bytes, 0);
+    _->dirty.resize(_->desc.extend.height, false);
 }
 
 SlicedGridVolumeWriter::~SlicedGridVolumeWriter() {
@@ -545,19 +555,6 @@ SlicedGridVolumeWriter::~SlicedGridVolumeWriter() {
     Flush();
 }
 
-void SlicedGridVolumeWriter::SetVolumeDesc(const SlicedGridVolumeDesc& desc) noexcept {
-    if(!CheckValidation(desc)){
-        std::cerr << "Invalid SlicedGridVolumeDesc, set failed!" << std::endl;
-        PrintVolumeDesc(desc);
-        return;
-    }
-    _->desc = desc;
-    _->file.SetVolumeDesc(desc);
-
-    _->slice_bytes = GetVoxelSize(_->desc.voxel_info) * _->desc.extend.width * _->desc.extend.height;
-    _->slice_data.resize(_->slice_bytes, 0);
-    _->dirty.resize(_->desc.extend.height, false);
-}
 
 const SlicedGridVolumeDesc &SlicedGridVolumeWriter::GetVolumeDesc() const noexcept {
     return _->desc;

@@ -167,10 +167,12 @@ struct Voxel<VoxelType::uint8, VoxelFormat::R> {
         uint8_t x = 0;
         uint8_t r;
     };
-
+    static constexpr VoxelType type = VoxelType::uint8;
+    static constexpr VoxelFormat format = VoxelFormat::R;
     static constexpr size_t size() { return 1; }
 };
 using VoxelRU8 = Voxel<VoxelType::uint8,VoxelFormat::R>;
+static_assert(sizeof(VoxelRU8) == 1, "");
 
 template<>
 struct Voxel<VoxelType::uint16, VoxelFormat::R> {
@@ -178,7 +180,8 @@ struct Voxel<VoxelType::uint16, VoxelFormat::R> {
         uint16_t x = 0;
         uint16_t r;
     };
-
+    static constexpr VoxelType type = VoxelType::uint16;
+    static constexpr VoxelFormat format = VoxelFormat::R;
     static constexpr size_t size() { return 2; }
 };
 using VoxelRU16 = Voxel<VoxelType::uint16,VoxelFormat::R>;
@@ -387,8 +390,6 @@ public:
 template<typename VolumeDescT>
 class VolumeWriterInterface : public CVolumeWriterInterface{
 public:
-    virtual void SetVolumeDesc(const VolumeDescT&) noexcept = 0;
-
     virtual const VolumeDescT& GetVolumeDesc() const noexcept = 0;
 };
 
@@ -397,6 +398,8 @@ inline constexpr const char* InvalidVolumeName = "InvalidVolume";
 struct VolumeDesc{
     // empty is not invalid
     std::string volume_name;
+    // raw data file path
+    std::string data_path;
     VoxelInfo voxel_info;
 };
 
@@ -470,6 +473,9 @@ protected:
 class RawGridVolumeReaderPrivate;
 class RawGridVolumeReader : public VolumeReaderInterface<RawGridVolumeDesc>{
 public:
+    /**
+     * @param filename descriptor json file path
+     */
     explicit RawGridVolumeReader(const std::string& filename);
 
     ~RawGridVolumeReader();
@@ -486,12 +492,10 @@ private:
 class RawGridVolumeWriterPrivate;
 class RawGridVolumeWriter : public VolumeWriterInterface<RawGridVolumeDesc>{
 public:
-    explicit RawGridVolumeWriter(const std::string& filename);
+    explicit RawGridVolumeWriter(const std::string& filename, const RawGridVolumeDesc& desc);
 
     ~RawGridVolumeWriter();
 public:
-    void SetVolumeDesc(const RawGridVolumeDesc&) noexcept override;
-
     const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
@@ -551,6 +555,7 @@ using SliceWriteFunc = std::function<void(int dx, int dy, void* dst, size_t ele_
 class SlicedGridVolumeReaderPrivate;
 class SlicedGridVolumeReader : public VolumeReaderInterface<SlicedGridVolumeDesc>{
 public:
+
     SlicedGridVolumeReader(const std::string& filename) noexcept(false);
 
     ~SlicedGridVolumeReader();
@@ -562,6 +567,7 @@ public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
 public:
     /**
      * @brief Can only read axis return by GetVolumeDesc, use this if want to read more efficient.
@@ -597,12 +603,11 @@ protected:
 class SlicedGridVolumeWriterPrivate;
 class SlicedGridVolumeWriter : public VolumeWriterInterface<SlicedGridVolumeDesc>{
 public:
-    SlicedGridVolumeWriter(const std::string& filename);
+    SlicedGridVolumeWriter(const std::string& filename, const SlicedGridVolumeDesc& desc);
 
     ~SlicedGridVolumeWriter();
 
 public:
-    void SetVolumeDesc(const SlicedGridVolumeDesc&) noexcept override;
 
     const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
@@ -671,13 +676,22 @@ private:
 class BlockedGridVolumeWriterPrivate;
 class BlockedGridVolumeWriter : public VolumeWriterInterface<BlockedGridVolumeDesc>{
 public:
-    void SetVolumeDesc(const BlockedGridVolumeDesc&) noexcept override;
+    BlockedGridVolumeWriter(const std::string& filename, const BlockedGridVolumeDesc& desc);
+
+    ~BlockedGridVolumeWriter();
+
+public:
     const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+
 public:
     void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
+
     void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
+
 private:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
 };
@@ -722,13 +736,22 @@ private:
 class EncodedGridVolumeWriterPrivate;
 class EncodedGridVolumeWriter : public VolumeWriterInterface<EncodedGridVolumeDesc>{
 public:
-    void SetVolumeDesc(const EncodedGridVolumeDesc&) noexcept override;
+    EncodedGridVolumeWriter(const std::string& filename, const EncodedGridVolumeDesc& desc);
+
+    ~EncodedGridVolumeWriter();
+
+public:
     const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+
 public:
     void WriteEncodedData(const void* buf, size_t size) noexcept;
+
     void WriteEncodedData(const Packets& packets) noexcept;
+
 private:
     std::unique_ptr<EncodedGridVolumeWriterPrivate> _;
 };
@@ -803,15 +826,14 @@ private:
 class EncodedBlockedGridVolumeWriterPrivate;
 class EncodedBlockedGridVolumeWriter : public VolumeWriterInterface<EncodedBlockedGridVolumeDesc>{
 public:
-    EncodedBlockedGridVolumeWriter(const std::string& filename);
-
+    /**
+     * @param filename
+     */
     EncodedBlockedGridVolumeWriter(const std::string& filename, const EncodedBlockedGridVolumeDesc& desc);
 
     ~EncodedBlockedGridVolumeWriter();
 
 public:
-    void SetVolumeDesc(const EncodedBlockedGridVolumeDesc&) noexcept override;
-
     const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
@@ -834,14 +856,22 @@ private:
 template<typename T>
 class GridDataView;
 
+/**
+ * @brief like string_view.
+ * @note only parse cpu ptr, or if you know what you are doing.
+ */
 template<typename T>
 class SliceDataView {
 public:
-    SliceDataView(uint32_t sizeX, uint32_t sizeY, T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
+    SliceDataView()
+    : SliceDataView(0, 0, nullptr, nullptr)
+    {}
+
+    SliceDataView(uint32_t sizeX, uint32_t sizeY,const T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
     :sizeX(sizeX),sizeY(sizeY),data(srcP),map(map)
     {}
 
-    T At(int x,int y) const{
+    const T& At(int x,int y) const{
         if(map){
             return map(x,y);
         }
@@ -851,7 +881,7 @@ public:
     template<typename>
     friend class GridDataView;
 
-    T* data;
+    const T* data;
     uint32_t sizeX,sizeY;
 private:
     std::function<T(int x,int y)> map;
@@ -860,28 +890,32 @@ private:
 template<typename T>
 class GridDataView {
 public:
+    GridDataView()
+    : GridDataView(0,0,0,nullptr)
+    {}
+
     GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,const T *srcP)
     :size_x(sizeX),size_y(sizeY),size_z(sizeZ),data(srcP)
     {
         assert(data && size_x && size_y && size_z);
     }
 
-    SliceDataView<T> ViewSliceX(uint32_t x){
-        std::function<size_t(int,int)> map = [x,this](int z,int y){
+    SliceDataView<T> ViewSliceX(uint32_t x) const {
+        std::function<const T&(int,int)> map = [x,this](int z,int y){
             return this->At(x,size_y - 1 - y,z);
         };
         return SliceDataView<T>(size_z,size_y,nullptr,map);
     }
 
-    SliceDataView<T> ViewSliceY(uint32_t y){
-        std::function<size_t(int,int)> map = [y,this](int x,int z){
+    SliceDataView<T> ViewSliceY(uint32_t y) const {
+        std::function<const T&(int,int)> map = [y,this](int x,int z){
             return this->At(x,y,size_z - 1 -z);
         };
         return SliceDataView<T>(size_x,size_z,nullptr,map);
     }
 
-    SliceDataView<T> ViewSliceZ(uint32_t z){
-        return SliceDataView<T>(size_x,size_y,data + (size_t)z * size_x * size_y);
+    SliceDataView<T> ViewSliceZ(uint32_t z) const {
+        return SliceDataView<T>(size_x, size_y, data + (size_t)z * size_x * size_y, nullptr);
     }
 
     const T& At(int x, int y, int z) const{
@@ -918,22 +952,41 @@ Register_VoxelVideoCodec(VoxelRU8,CodecDevice::CPU)
 Register_VoxelVideoCodec(VoxelRU8,CodecDevice::GPU)
 Register_VoxelVideoCodec(VoxelRU16,CodecDevice::CPU)
 
-class CVolumeVideoCodecInterface{
+class CVolumeCodecInterface{
+public:
+
+};
+
+class CVolumeVideoCodecInterface : public CVolumeCodecInterface{
 public:
     virtual ~CVolumeVideoCodecInterface() = default;
 
-    virtual bool Encode(const void* buf, size_t size, Packets& packets) noexcept = 0;
+    virtual bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept = 0;
 
-    virtual bool Decode(const Packets &packets, void* buf, size_t size) noexcept = 0;
+    virtual bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept = 0;
+
+};
+
+class CVolumeBitsCodecInterface : public CVolumeCodecInterface{
+public:
+
+};
+
+
+template<typename T>
+class VolumeBitsCodecInterface : public CVolumeBitsCodecInterface{
 
 };
 
 template<typename T>
 class VolumeVideoCodecInterface : public CVolumeVideoCodecInterface{
 public:
-    virtual bool Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) = 0;
-    virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) = 0;
+    virtual size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) = 0;
+
+    virtual size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) = 0;
+
     virtual bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) = 0;
+
     virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) = 0;
 
 };
@@ -941,21 +994,35 @@ public:
 template<typename T,CodecDevice device,typename V = void>
 class VolumeVideoCodec;
 
+class CPUVolumeVideoCodecPrivate;
 template<typename T>
 class VolumeVideoCodec<T,CodecDevice::CPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
     explicit VolumeVideoCodec(int threadCount = 1);
 
-    bool Encode(const void* buf, size_t size, Packets& packets) noexcept override;
-    bool Decode(const Packets &packets, void* buf, size_t size) noexcept override;
+    bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept override;
+
+    bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept override;
+
 public:
-    bool Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) override;
-    bool Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) override;
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) override;
+
+    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) override;
+
     bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) override;
+
     bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) override;
+
+private:
+    std::unique_ptr<CPUVolumeVideoCodecPrivate> _;
 };
 
+template<typename T>
+using CPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::CPU, std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>;
+
+
+class GPUVolumeVideoCodecPrivate;
 template<typename T>
 class VolumeVideoCodec<T,CodecDevice::GPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>
         : public VolumeVideoCodecInterface<T>{
@@ -964,17 +1031,41 @@ public:
     //cuda context
     explicit VolumeVideoCodec(void* context);
 
-    bool Encode(const void* buf, size_t size, Packets& packets) noexcept override;
-    bool Decode(const Packets &packets, void* buf, size_t size) noexcept override;
+    /**
+     * @param buf cpu or gpu ptr are both ok
+     */
+    bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept override;
+
+    /**
+     * @param buf cpu or gpu ptr are both ok
+     */
+    bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept override;
+
 public:
-    bool Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) noexcept override;
-    bool Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) noexcept override;
+    /**
+     * @param buf only support cpu ptr now
+     */
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) noexcept override;
+
+    /**
+     * @param buf only support cpu ptr now
+     */
+    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) noexcept override;
+
     bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) noexcept override;
+
     bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) noexcept override;
+
+private:
+    std::unique_ptr<GPUVolumeVideoCodecPrivate> _;
 };
+
+template<typename T>
+using GPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::GPU, std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>;
 
 
 struct VolumeFileDesc{
+    //todo use std::variant
     union{
       RawGridVolumeDesc raw_desc;
       SlicedGridVolumeDesc sliced_desc;
@@ -1078,3 +1169,371 @@ struct std::hash<vol::BlockIndex>{
         return a ^ (b + 0x9e3779b97f4a7c15LL + (c << 6) + (c >> 2));
     }
 };
+
+
+// imply template class VolumeVideoCodec
+VOL_BEGIN
+
+class VideoCodec{
+public:
+    virtual ~VideoCodec() = default;
+
+    struct CodecParams{
+        int frame_w = 0;
+        int frame_h = 0;
+        int frame_n = 0;
+        int samplers_per_pixel = 0;
+        int bits_per_sampler = 0;
+        int threads_count = 1;
+        bool encode = true;
+        int device_index = 0;
+        void* context = nullptr;
+    };
+
+    static std::unique_ptr<VideoCodec> Create(CodecDevice device);
+
+    /**
+     * @brief Clear status, must call after each volume encoded or decoded!!!
+     */
+    virtual bool ReSet(const CodecParams& params) = 0;
+
+    /**
+     * @brief encode one frame return put results in packets
+     */
+    virtual void EncodeFrameIntoPackets(const void* buf, size_t size, Packets& packets) = 0;
+
+    virtual size_t DecodePacketIntoFrames(const Packet& packet, void* buf, size_t size) = 0;
+};
+
+class CPUVolumeVideoCodecPrivate{
+public:
+    std::unique_ptr<VideoCodec> video_codec;
+    int thread_count = 0;
+};
+
+template<typename T>
+CPUVolumeVideoCodec<T>::VolumeVideoCodec(int threadCount) {
+    _->video_codec = VideoCodec::Create(CodecDevice::CPU);
+    _->thread_count = threadCount;
+}
+
+template<typename T>
+bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) noexcept {
+    auto [w, h, d] = extend;
+    VideoCodec::CodecParams params{
+            (int)w,(int)h,(int)d,
+            GetVoxelSampleCount(T::format),
+            GetVoxelBits(T::type),
+            _->thread_count
+    };
+    if(!_->video_codec->ReSet(params)) return false;
+//    auto p = reinterpret_cast<const VoxelRU8 *>(buf);
+    GridDataView<T> data_view(w, h, d, reinterpret_cast<const T*>(buf));
+    auto voxel_size = GetVoxelSize(T::type, T::format);
+    const size_t slice_size = w * d * voxel_size;
+    // only encode buf with size
+    d = size / slice_size;
+    for(int z = 0; z < d; z++){
+        Packets tmp_packets;
+        _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
+    }
+    return true;
+}
+
+template<typename T>
+bool CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) noexcept {
+    if(!buf || !size) return false;
+
+    auto voxel_size = GetVoxelSize(T::type, T::format);
+    if(extend.size() * voxel_size > size){
+        throw std::runtime_error("target decode buffer size is not enough large!");
+    }
+    // cpp20
+    VideoCodec::CodecParams params{
+        .threads_count = _->thread_count,
+        .encode = false
+    };
+    if(!_->video_codec->ReSet(params)) return false;
+
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    size_t decode_size = 0;
+    for(auto& packet : packets){
+        auto ret = _->video_codec->DecodePacketIntoFrames(packet, dst_ptr + decode_size, size - decode_size);
+        decode_size += ret;
+    }
+
+    return true;
+}
+
+template<typename T>
+size_t CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, void *buf, size_t size) {
+    if(!buf || !size) return 0;
+    if(slices.empty()) return 0;
+
+    Packets packets;
+    auto ret = Encode(slices, packets);
+    if(!ret) return 0;
+    // packets to linear buf
+    size_t packet_size = 0;
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    for(auto& packet : packets){
+        if(packet_size >= size) break;
+        size_t s = packet.size();
+        std::memcpy(dst_ptr + packet_size, &s, sizeof(size_t));
+        packet_size += sizeof(size_t);
+        std::memcpy(dst_ptr + packet_size, packet.data(), packet.size());
+        packet_size += packet.size();
+    }
+
+    return packet_size;
+}
+
+template<typename T>
+size_t CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) {
+    std::vector<SliceDataView<T>> slices;
+    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
+        slices.resize(count);
+        for(int i = 0; i < count; i++)
+            slices.emplace_back(std::invoke(f,p,i));
+    };
+    if(axis == SliceAxis::AXIS_X)
+        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
+    else if(axis == SliceAxis::AXIS_Y)
+        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
+    else if(axis == SliceAxis::AXIS_Z)
+        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
+    else
+        return 0;
+    return Encode(slices, buf, size);
+}
+
+template<typename T>
+bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) {
+    // SliceDataView' storage maybe not linear because of map
+    auto voxel_size = T::size();
+    auto width = slices.front().sizeX;
+    auto height = slices.front().sizeY;
+    auto depth = slices.size();
+    auto slice_size = voxel_size * width * height;
+    VideoCodec::CodecParams params{
+            width,height,depth,
+            GetVoxelSampleCount(T::format),
+            GetVoxelBits(T::type),
+            _->thread_count
+    };
+    if(!_->video_codec->ReSet(params)) return false;
+    std::vector<uint8_t> buffer(slices.size() * slice_size, 0);
+    size_t offset = 0;
+    for(auto& slice : slices){
+        std::memcpy(buffer.data() + offset, slice.data, slice_size);
+        offset += slice_size;
+    }
+    Extend3D extend = {width, height, depth};
+    auto ret = Encode(extend, buffer.data(), buffer.size(), packets);
+    return ret > 0;
+}
+
+template<typename T>
+bool CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) {
+    std::vector<SliceDataView<T>> slices;
+    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
+        slices.resize(count);
+        for(int i = 0; i < count; i++)
+            slices.emplace_back(std::invoke(f,p,i));
+    };
+    if(axis == SliceAxis::AXIS_X)
+        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
+    else if(axis == SliceAxis::AXIS_Y)
+        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
+    else if(axis == SliceAxis::AXIS_Z)
+        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
+    else
+        return false;
+
+    return Encode(slices, packets);
+}
+
+
+class GPUVolumeVideoCodecPrivate{
+public:
+    std::unique_ptr<VideoCodec> video_codec;
+    int gpu_index = 0;
+    void* context = nullptr;
+
+};
+
+
+template<typename T>
+GPUVolumeVideoCodec<T>::VolumeVideoCodec(int GPUIndex){
+    _ = std::make_unique<GPUVolumeVideoCodecPrivate>();
+    _->gpu_index = GPUIndex;
+    _->video_codec = VideoCodec::Create(CodecDevice::GPU);
+}
+
+template<typename T>
+GPUVolumeVideoCodec<T>::VolumeVideoCodec(void *context) {
+    if(!context){
+        throw std::runtime_error("Invalid nullptr context");
+    }
+    _ = std::make_unique<GPUVolumeVideoCodecPrivate>();
+    _->context = context;
+    _->video_codec = VideoCodec::Create(CodecDevice::GPU);
+}
+
+template<typename T>
+bool GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) noexcept {
+    auto [w, h, d] = extend;
+    VideoCodec::CodecParams params{
+            (int)w, (int)h,(int)d,
+            GetVoxelSampleCount(T::format),
+            GetVoxelBits(T::type), 1, true,
+            _->gpu_index,
+            _->context
+    };
+    // same with CPU
+    if(!_->video_codec->ReSet(params)) return false;
+    GridDataView<T> data_view(w, h, d, buf);
+    auto voxel_size = GetVoxelSize(T::type, T::format);
+    const size_t slice_size = w * d * voxel_size;
+    // only encode buf with size
+    d = size / slice_size;
+    for(int z = 0; z < d; z++){
+        Packets tmp_packets;
+        _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
+    }
+    return true;
+}
+
+template<typename T>
+bool GPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) noexcept {
+    if(!buf || !size) return false;
+
+    auto voxel_size = GetVoxelSize(T::type, T::format);
+    if(extend.size() * voxel_size > size){
+        throw std::runtime_error("target decode buffer size is not enough large!");
+    }
+    // cpp20
+    VideoCodec::CodecParams params{
+            .encode = false,
+            .device_index = _->gpu_index,
+            .context = _->context
+    };
+    if(!_->video_codec->ReSet(params)) return false;
+
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    size_t decode_size = 0;
+    for(auto& packet : packets){
+        auto ret = _->video_codec->DecodePacketIntoFrames(packet, dst_ptr + decode_size, size - decode_size);
+        decode_size += ret;
+    }
+
+    return true;
+}
+
+template<typename T>
+size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, void *buf, size_t size) noexcept {
+    if(slices.empty() || !buf || !size) return 0;
+    Packets packets;
+    auto ret = Encode(slices, packets);
+    if(!ret) return 0;
+    // buf must be cpu
+    (void)(*(uint8_t*)buf);
+    // packets to linear buf
+    size_t packet_size = 0;
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    for(auto& packet : packets){
+        if(packet_size >= size) break;
+        size_t s = packet.size();
+        std::memcpy(dst_ptr + packet_size, &s, sizeof(size_t));
+        packet_size += sizeof(size_t);
+        std::memcpy(dst_ptr + packet_size, packet.data(), packet.size());
+        packet_size += packet.size();
+    }
+
+    return packet_size;
+}
+
+template<typename T>
+size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) noexcept {
+    std::vector<SliceDataView<T>> slices;
+    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
+        slices.resize(count);
+        for(int i = 0; i < count; i++)
+            slices.emplace_back(std::invoke(f,p,i));
+    };
+    if(axis == SliceAxis::AXIS_X)
+        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
+    else if(axis == SliceAxis::AXIS_Y)
+        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
+    else if(axis == SliceAxis::AXIS_Z)
+        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
+    else
+        return 0;
+    return Encode(slices, buf, size);
+}
+
+template<typename T>
+bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) noexcept {
+    auto voxel_size = T::size();
+    auto width = slices.front().sizeX;
+    auto height = slices.front().sizeY;
+    auto depth = slices.size();
+    auto slice_ele_count = (size_t)width * height;
+    auto slice_size = voxel_size * width * height;
+    VideoCodec::CodecParams params{
+            .frame_w = width,.frame_h = height,.frame_n = depth,
+            .samplers_per_pixel = GetVoxelSampleCount(T::format),
+            .bits_per_sampler = GetVoxelBits(T::type),
+            .device_index = _->gpu_index,
+            .context = _->context
+    };
+    if(!_->video_codec->ReSet(params)) return false;
+    auto slice_buffer = std::vector<uint8_t>(slice_size, 0);
+    auto dst_ptr = slice_buffer.data();
+    for(auto& slice : slices){
+        size_t offset = 0;
+        for(int i = 0; i < height; i++)
+            for(int j = 0; j < width; j++)
+                std::memcpy(dst_ptr + offset, &slice.At(j, i), voxel_size), offset += voxel_size;
+        assert(offset == slice_size);
+        Packets tmp_packets;
+        _->video_codec->EncodeFrameIntoPackets(dst_ptr, slice_size, tmp_packets);
+        packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
+    }
+    return true;
+}
+
+template<typename T>
+bool GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) noexcept {
+    std::vector<SliceDataView<T>> slices;
+    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
+        slices.resize(count);
+        for(int i = 0; i < count; i++)
+            slices.emplace_back(std::invoke(f,p,i));
+    };
+    if(axis == SliceAxis::AXIS_X)
+        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
+    else if(axis == SliceAxis::AXIS_Y)
+        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
+    else if(axis == SliceAxis::AXIS_Z)
+        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
+    else
+        return false;
+
+    return Encode(slices, packets);
+}
+
+VOL_END
+
+// imply template class VolumeBitsCodec
+VOL_BEGIN
+
+class BitsCodec{
+public:
+
+};
+
+
+VOL_END

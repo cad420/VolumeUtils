@@ -48,6 +48,14 @@ inline constexpr const char* VoxelFormatToStr(VoxelFormat format){
     }
 }
 
+inline constexpr const char* VolumeCodecToStr(GridVolumeDataCodec codec){
+    switch (codec) {
+        case GridVolumeDataCodec::GRID_VOLUME_CODEC_BITS : return "bits";
+        case GridVolumeDataCodec::GRID_VOLUME_CODEC_VIDEO : return "video";
+        default : return "none";
+    }
+}
+
 inline void PrintVolumeDesc(const VolumeDesc& desc, bool printName = true){
     if(printName){
         std::cerr << "VolumeDesc Info : " << std::endl;
@@ -90,5 +98,19 @@ inline void PrintVolumeDesc(const EncodedBlockedGridVolumeDesc& desc, bool print
 
 }
 
+inline auto CreateCPUVolumeVideoCodecByVoxel(const VoxelInfo& voxel_info)->std::unique_ptr<CVolumeVideoCodecInterface>{
+    auto [type, format] = voxel_info;
+    if(type == VoxelType::uint8){
+        if(format == VoxelFormat::R){
+            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>();
+        }
+    }
+    else if(type == VoxelType::uint16){
+        if(format == VoxelFormat::R){
+            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>();
+        }
+    }
+    return nullptr;
+}
 
 VOL_END

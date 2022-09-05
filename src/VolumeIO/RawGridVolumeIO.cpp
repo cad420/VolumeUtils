@@ -100,15 +100,11 @@ public:
 
 };
 
-RawGridVolumeWriter::RawGridVolumeWriter(const std::string &filename) {
+RawGridVolumeWriter::RawGridVolumeWriter(const std::string &filename, const RawGridVolumeDesc& desc) {
 
 }
 
 RawGridVolumeWriter::~RawGridVolumeWriter() {
-
-}
-
-void RawGridVolumeWriter::SetVolumeDesc(const RawGridVolumeDesc &) noexcept {
 
 }
 
