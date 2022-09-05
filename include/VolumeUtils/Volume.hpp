@@ -387,8 +387,6 @@ public:
 template<typename VolumeDescT>
 class VolumeWriterInterface : public CVolumeWriterInterface{
 public:
-    virtual void SetVolumeDesc(const VolumeDescT&) noexcept = 0;
-
     virtual const VolumeDescT& GetVolumeDesc() const noexcept = 0;
 };
 
@@ -397,6 +395,8 @@ inline constexpr const char* InvalidVolumeName = "InvalidVolume";
 struct VolumeDesc{
     // empty is not invalid
     std::string volume_name;
+    // raw data file path
+    std::string data_path;
     VoxelInfo voxel_info;
 };
 
@@ -470,6 +470,9 @@ protected:
 class RawGridVolumeReaderPrivate;
 class RawGridVolumeReader : public VolumeReaderInterface<RawGridVolumeDesc>{
 public:
+    /**
+     * @param filename descriptor json file path
+     */
     explicit RawGridVolumeReader(const std::string& filename);
 
     ~RawGridVolumeReader();
@@ -486,12 +489,10 @@ private:
 class RawGridVolumeWriterPrivate;
 class RawGridVolumeWriter : public VolumeWriterInterface<RawGridVolumeDesc>{
 public:
-    explicit RawGridVolumeWriter(const std::string& filename);
+    explicit RawGridVolumeWriter(const std::string& filename, const RawGridVolumeDesc& desc);
 
     ~RawGridVolumeWriter();
 public:
-    void SetVolumeDesc(const RawGridVolumeDesc&) noexcept override;
-
     const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
@@ -551,6 +552,7 @@ using SliceWriteFunc = std::function<void(int dx, int dy, void* dst, size_t ele_
 class SlicedGridVolumeReaderPrivate;
 class SlicedGridVolumeReader : public VolumeReaderInterface<SlicedGridVolumeDesc>{
 public:
+
     SlicedGridVolumeReader(const std::string& filename) noexcept(false);
 
     ~SlicedGridVolumeReader();
@@ -562,6 +564,7 @@ public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
 public:
     /**
      * @brief Can only read axis return by GetVolumeDesc, use this if want to read more efficient.
@@ -597,12 +600,11 @@ protected:
 class SlicedGridVolumeWriterPrivate;
 class SlicedGridVolumeWriter : public VolumeWriterInterface<SlicedGridVolumeDesc>{
 public:
-    SlicedGridVolumeWriter(const std::string& filename);
+    SlicedGridVolumeWriter(const std::string& filename, const SlicedGridVolumeDesc& desc);
 
     ~SlicedGridVolumeWriter();
 
 public:
-    void SetVolumeDesc(const SlicedGridVolumeDesc&) noexcept override;
 
     const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
@@ -671,13 +673,22 @@ private:
 class BlockedGridVolumeWriterPrivate;
 class BlockedGridVolumeWriter : public VolumeWriterInterface<BlockedGridVolumeDesc>{
 public:
-    void SetVolumeDesc(const BlockedGridVolumeDesc&) noexcept override;
+    BlockedGridVolumeWriter(const std::string& filename, const BlockedGridVolumeDesc& desc);
+
+    ~BlockedGridVolumeWriter();
+
+public:
     const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+
 public:
     void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
+
     void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
+
 private:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
 };
@@ -722,13 +733,22 @@ private:
 class EncodedGridVolumeWriterPrivate;
 class EncodedGridVolumeWriter : public VolumeWriterInterface<EncodedGridVolumeDesc>{
 public:
-    void SetVolumeDesc(const EncodedGridVolumeDesc&) noexcept override;
+    EncodedGridVolumeWriter(const std::string& filename, const EncodedGridVolumeDesc& desc);
+
+    ~EncodedGridVolumeWriter();
+
+public:
     const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+
 public:
     void WriteEncodedData(const void* buf, size_t size) noexcept;
+
     void WriteEncodedData(const Packets& packets) noexcept;
+
 private:
     std::unique_ptr<EncodedGridVolumeWriterPrivate> _;
 };
@@ -803,15 +823,14 @@ private:
 class EncodedBlockedGridVolumeWriterPrivate;
 class EncodedBlockedGridVolumeWriter : public VolumeWriterInterface<EncodedBlockedGridVolumeDesc>{
 public:
-    EncodedBlockedGridVolumeWriter(const std::string& filename);
-
+    /**
+     * @param filename
+     */
     EncodedBlockedGridVolumeWriter(const std::string& filename, const EncodedBlockedGridVolumeDesc& desc);
 
     ~EncodedBlockedGridVolumeWriter();
 
 public:
-    void SetVolumeDesc(const EncodedBlockedGridVolumeDesc&) noexcept override;
-
     const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;

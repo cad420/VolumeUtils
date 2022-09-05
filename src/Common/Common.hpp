@@ -48,6 +48,14 @@ inline constexpr const char* VoxelFormatToStr(VoxelFormat format){
     }
 }
 
+inline constexpr const char* VolumeCodecToStr(GridVolumeDataCodec codec){
+    switch (codec) {
+        case GridVolumeDataCodec::GRID_VOLUME_CODEC_BITS : return "bits";
+        case GridVolumeDataCodec::GRID_VOLUME_CODEC_VIDEO : return "video";
+        default : return "none";
+    }
+}
+
 inline void PrintVolumeDesc(const VolumeDesc& desc, bool printName = true){
     if(printName){
         std::cerr << "VolumeDesc Info : " << std::endl;
