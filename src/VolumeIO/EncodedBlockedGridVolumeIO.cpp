@@ -197,7 +197,7 @@ namespace{
 class EncodedBlockedGridVolumeReaderPrivate{
 public:
     EncodedBlockedGridVolumeDesc desc;
-    std::unique_ptr<CVolumeVideoCodecInterface> video_codec;
+    std::unique_ptr<CVolumeCodecInterface> video_codec;
     EncodedBlockedGridVolumeFile file;
 
     size_t block_bytes;
@@ -379,7 +379,7 @@ size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &bl
 class EncodedBlockedGridVolumeWriterPrivate{
 public:
     EncodedBlockedGridVolumeDesc desc;
-    std::unique_ptr<CVolumeVideoCodecInterface> video_codec;
+    std::unique_ptr<CVolumeCodecInterface> video_codec;
     EncodedBlockedGridVolumeFile file;
 
     size_t block_bytes;

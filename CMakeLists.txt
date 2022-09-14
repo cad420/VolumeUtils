@@ -14,6 +14,9 @@ target_include_directories(
         ${PROJECT_SOURCE_DIR}/include
         ${PROJECT_SOURCE_DIR}/deps/source
         ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/include
+        ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/include
+        ${PROJECT_SOURCE_DIR}/deps/binary/nvcodec/include
+
 )
 target_compile_features(
         VolumeUtils

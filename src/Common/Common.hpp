@@ -13,11 +13,11 @@ inline VoxelType StrToVoxelType(std::string_view str){
     return VoxelType::unknown;
 }
 
-inline GridVolumeDataCodec StrToGridVolumeDataCodec(std::string_view str){
+inline GridVolumeCodec StrToGridVolumeDataCodec(std::string_view str){
     auto s = ConvertStrToLower(str);
-    if(s == "video") return GridVolumeDataCodec::GRID_VOLUME_CODEC_VIDEO;
-    if(s == "bits") return GridVolumeDataCodec::GRID_VOLUME_CODEC_BITS;
-    return GridVolumeDataCodec::GRID_VOLUME_CODEC_NONE;
+    if(s == "video") return GridVolumeCodec::GRID_VOLUME_CODEC_VIDEO;
+    if(s == "bits") return GridVolumeCodec::GRID_VOLUME_CODEC_BITS;
+    return GridVolumeCodec::GRID_VOLUME_CODEC_NONE;
 }
 
 inline VoxelFormat StrToVoxelFormat(std::string_view str){
@@ -48,10 +48,10 @@ inline constexpr const char* VoxelFormatToStr(VoxelFormat format){
     }
 }
 
-inline constexpr const char* VolumeCodecToStr(GridVolumeDataCodec codec){
+inline constexpr const char* VolumeCodecToStr(GridVolumeCodec codec){
     switch (codec) {
-        case GridVolumeDataCodec::GRID_VOLUME_CODEC_BITS : return "bits";
-        case GridVolumeDataCodec::GRID_VOLUME_CODEC_VIDEO : return "video";
+        case GridVolumeCodec::GRID_VOLUME_CODEC_BITS : return "bits";
+        case GridVolumeCodec::GRID_VOLUME_CODEC_VIDEO : return "video";
         default : return "none";
     }
 }
@@ -98,16 +98,16 @@ inline void PrintVolumeDesc(const EncodedBlockedGridVolumeDesc& desc, bool print
 
 }
 
-inline auto CreateCPUVolumeVideoCodecByVoxel(const VoxelInfo& voxel_info)->std::unique_ptr<CVolumeVideoCodecInterface>{
+inline auto CreateCPUVolumeVideoCodecByVoxel(const VoxelInfo& voxel_info)->std::unique_ptr<CVolumeCodecInterface>{
     auto [type, format] = voxel_info;
     if(type == VoxelType::uint8){
         if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>();
+            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>(1);
         }
     }
     else if(type == VoxelType::uint16){
         if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>();
+            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>(1);
         }
     }
     return nullptr;

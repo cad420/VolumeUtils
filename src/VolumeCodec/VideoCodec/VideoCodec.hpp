@@ -1,26 +1,38 @@
 #pragma once
 
 #include "VolumeUtils/Volume.hpp"
-#include <vector>
 
 VOL_BEGIN
 
-struct HevcVideoCodecParam{
-    static constexpr int MAX_SAMPLES = 4;
-    enum CodecFormat{
-        YUV420_8BIT,
-        YUV420_10BIT,
-        YUV420_12BIT
-    } fmt;
-    uint8_t* data;//continuous chroma planes storage
-    std::vector<std::vector<uint8_t>> frame[MAX_SAMPLES];//separate chroma planes storage
-    int width,height;
-    int frame_size;
-    int frames;
-    int bits_per_sample;
+enum class VideoCodecFormat{
+    NONE,
+    YUV420_8BIT,
+    YUV420_10BIT,
+    YUV420_12BIT
+};
+
+struct HevcVideoCodecParams{
+//    static constexpr int MAX_SAMPLES = 4;
+//    uint8_t* data;//continuous chroma planes storage
+//    std::vector<std::vector<uint8_t>> frame[MAX_SAMPLES];//separate chroma planes storage
+
+    int frame_width;
+    int frame_height;
+    int frame_count;
+    VideoCodecFormat fmt;
+    bool is_encode;// true for encode and false for decode
 
 };
 
-void Encode(const HevcVideoCodecParam& param, Packets& packets);
+/**
+ * @brief Same voxel coded by gpu or cpu should get same result, so cpu and gpu should share codec params
+ */
+
+using SharedVideoCodecParams = HevcVideoCodecParams;
+
+inline bool TransformToShared(const VideoCodec::CodecParams& params, CodecDevice device, SharedVideoCodecParams* ret){
+
+    return true;
+}
 
 VOL_END

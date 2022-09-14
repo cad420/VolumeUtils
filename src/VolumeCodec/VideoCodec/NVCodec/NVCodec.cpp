@@ -1,4 +1,3 @@
-//
-// Created by wyz on 2022/5/13.
-//
-#include "../VideoCodec.hpp"
+#include "NVCodec.hpp"
+#include "nvEncodeAPI.h"
+//#include "nvcuvid.h"

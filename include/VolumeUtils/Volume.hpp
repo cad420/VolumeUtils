@@ -696,7 +696,7 @@ private:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
 };
 
-enum class GridVolumeDataCodec:int {
+enum class GridVolumeCodec: int {
     GRID_VOLUME_CODEC_NONE = 0,
     GRID_VOLUME_CODEC_VIDEO = 1,
     GRID_VOLUME_CODEC_BITS = 2
@@ -708,7 +708,7 @@ using EncodeWorker = std::function<size_t(const void*, Packets&)>;
 using DecodeWorker = std::function<size_t(const Packets&, void*)>;
 
 struct EncodedGridVolumeDesc : RawGridVolumeDesc{
-    GridVolumeDataCodec codec;
+    GridVolumeCodec codec;
     VoxelInfo voxel;
 };
 
@@ -758,7 +758,7 @@ private:
 
 //todo virtual derived?
 struct EncodedBlockedGridVolumeDesc : BlockedGridVolumeDesc{
-    GridVolumeDataCodec codec;
+    GridVolumeCodec codec;
     char preserve[20];
 };//64
 
@@ -954,33 +954,26 @@ Register_VoxelVideoCodec(VoxelRU16,CodecDevice::CPU)
 
 class CVolumeCodecInterface{
 public:
+    ~CVolumeCodecInterface() = default;
 
-};
+    virtual GridVolumeCodec GetCodecType() const noexcept = 0;
 
-class CVolumeVideoCodecInterface : public CVolumeCodecInterface{
-public:
-    virtual ~CVolumeVideoCodecInterface() = default;
-
+    virtual CodecDevice GetCodecDevice() const noexcept = 0;
+    /**
+     * @note These infos may be not enough so we need derived this interface with template class with Voxel info.
+     */
     virtual bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept = 0;
 
     virtual bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept = 0;
 
 };
 
-class CVolumeBitsCodecInterface : public CVolumeCodecInterface{
-public:
-
-};
-
 
 template<typename T>
-class VolumeBitsCodecInterface : public CVolumeBitsCodecInterface{
-
-};
-
-template<typename T>
-class VolumeVideoCodecInterface : public CVolumeVideoCodecInterface{
+class VolumeCodecInterface : public CVolumeCodecInterface{
 public:
+    ~VolumeCodecInterface() = default;
+
     virtual size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) = 0;
 
     virtual size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) = 0;
@@ -989,6 +982,22 @@ public:
 
     virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) = 0;
 
+};
+
+template<typename T>
+class VolumeBitsCodecInterface : public VolumeCodecInterface<T>{
+public:
+    GridVolumeCodec GetCodecType() const noexcept override{
+        return GridVolumeCodec::GRID_VOLUME_CODEC_BITS;
+    }
+};
+
+template<typename T>
+class VolumeVideoCodecInterface : public VolumeCodecInterface<T>{
+public:
+    GridVolumeCodec GetCodecType() const noexcept override{
+        return GridVolumeCodec::GRID_VOLUME_CODEC_VIDEO;
+    }
 };
 
 template<typename T,CodecDevice device,typename V = void>
@@ -1000,6 +1009,10 @@ class VolumeVideoCodec<T,CodecDevice::CPU,std::enable_if_t<VoxelVideoCodecV<T,Co
         : public VolumeVideoCodecInterface<T>{
 public:
     explicit VolumeVideoCodec(int threadCount = 1);
+
+    CodecDevice GetCodecDevice() const noexcept override{
+        return CodecDevice::CPU;
+    }
 
     bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept override;
 
@@ -1031,6 +1044,10 @@ public:
     //cuda context
     explicit VolumeVideoCodec(void* context);
 
+    CodecDevice GetCodecDevice() const noexcept override{
+        return CodecDevice::GPU;
+    }
+
     /**
      * @param buf cpu or gpu ptr are both ok
      */
@@ -1043,12 +1060,12 @@ public:
 
 public:
     /**
-     * @param buf only support cpu ptr now
+     * @param buf only support cpu ptr now, maybe support device ptr next version...
      */
     size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) noexcept override;
 
     /**
-     * @param buf only support cpu ptr now
+     * @param buf only support cpu ptr now, maybe support device ptr next version...
      */
     size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) noexcept override;
 
@@ -1199,6 +1216,7 @@ public:
 
     /**
      * @brief encode one frame return put results in packets
+     * @remark maybe change to a more flexible interface
      */
     virtual void EncodeFrameIntoPackets(const void* buf, size_t size, Packets& packets) = 0;
 
@@ -1317,7 +1335,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
     auto depth = slices.size();
     auto slice_size = voxel_size * width * height;
     VideoCodec::CodecParams params{
-            width,height,depth,
+            (int)width,(int)height,(int)depth,
             GetVoxelSampleCount(T::format),
             GetVoxelBits(T::type),
             _->thread_count
@@ -1532,6 +1550,10 @@ VOL_BEGIN
 
 class BitsCodec{
 public:
+    struct BitsCodecParams{
+
+    };
+    static std::unique_ptr<BitsCodec> Create(CodecDevice device);
 
 };
 

@@ -1,4 +1,4 @@
-#include <VolumeUtils/Volume.hpp>
+#include "GPUBitsCodec.hpp"
 
 VOL_BEGIN
 
