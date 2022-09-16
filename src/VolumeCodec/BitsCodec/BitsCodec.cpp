@@ -5,6 +5,7 @@ VOL_BEGIN
 
 std::unique_ptr<BitsCodec> BitsCodec::Create(CodecDevice device) {
 
+    return nullptr;
 }
 
 

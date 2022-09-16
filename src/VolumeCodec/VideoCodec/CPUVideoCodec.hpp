@@ -1,6 +1,7 @@
 #pragma once
 
 #include "VideoCodec.hpp"
+#include <iostream>
 
 VOL_BEGIN
 

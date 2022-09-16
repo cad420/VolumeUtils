@@ -1,6 +1,24 @@
 #pragma once
 #include <functional>
 
+class ScopeGuard{
+public:
+    ScopeGuard(std::function<void()> f):f(std::move(f)){
+
+    }
+
+    ~ScopeGuard(){
+        if(f)
+            f();
+    }
+
+    void Dismiss(){
+        f = nullptr;
+    }
+private:
+    std::function<void()> f;
+};
+
 template<int Bits>
 void CopyBits(const uint8_t* src, uint8_t* dst){
     for(int i = 0; i < Bits; i++){

@@ -703,6 +703,8 @@ enum class GridVolumeCodec: int {
 };
 
 using Packet = std::vector<uint8_t>;
+// Packets for store volume video encode results is not perfect, use linear buffer with a packet parser is best.
+// But when I realize this is too late... So user would better use a global memory pool will improve efficient.
 using Packets = std::vector<Packet>;
 using EncodeWorker = std::function<size_t(const void*, Packets&)>;
 using DecodeWorker = std::function<size_t(const Packets&, void*)>;
@@ -1251,9 +1253,13 @@ bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
     const size_t slice_size = w * d * voxel_size;
     // only encode buf with size
     d = size / slice_size;
-    for(int z = 0; z < d; z++){
+    for(int z = 0; z < d + 1; z++){
         Packets tmp_packets;
-        _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        if(z < d)
+            _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        else
+            // one more for end
+            _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
     return true;
@@ -1280,6 +1286,9 @@ bool CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packe
         auto ret = _->video_codec->DecodePacketIntoFrames(packet, dst_ptr + decode_size, size - decode_size);
         decode_size += ret;
     }
+    // one more for end
+    auto ret = _->video_codec->DecodePacketIntoFrames({}, dst_ptr + decode_size, size - decode_size);
+    decode_size += ret;
 
     return true;
 }
@@ -1341,15 +1350,23 @@ bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
             _->thread_count
     };
     if(!_->video_codec->ReSet(params)) return false;
-    std::vector<uint8_t> buffer(slices.size() * slice_size, 0);
-    size_t offset = 0;
+    auto slice_buffer = std::vector<uint8_t>(slice_size, 0);
+    auto dst_ptr = slice_buffer.data();
     for(auto& slice : slices){
-        std::memcpy(buffer.data() + offset, slice.data, slice_size);
-        offset += slice_size;
+        size_t offset = 0;
+        for(int i = 0; i < height; i++)
+            for(int j = 0; j < width; j++)
+                std::memcpy(dst_ptr + offset, &slice.At(j, i), voxel_size), offset += voxel_size;
+        assert(offset == slice_size);
+        Packets tmp_packets;
+        _->video_codec->EncodeFrameIntoPackets(dst_ptr, slice_size, tmp_packets);
+        packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
-    Extend3D extend = {width, height, depth};
-    auto ret = Encode(extend, buffer.data(), buffer.size(), packets);
-    return ret > 0;
+    //one more for end
+    Packets tmp_packets;
+    _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
+    packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
+    return true;
 }
 
 template<typename T>
@@ -1416,9 +1433,12 @@ bool GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
     const size_t slice_size = w * d * voxel_size;
     // only encode buf with size
     d = size / slice_size;
-    for(int z = 0; z < d; z++){
+    for(int z = 0; z < d + 1; z++){
         Packets tmp_packets;
-        _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        if(z < d)
+            _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+        else
+            _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
     return true;
@@ -1446,7 +1466,8 @@ bool GPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packe
         auto ret = _->video_codec->DecodePacketIntoFrames(packet, dst_ptr + decode_size, size - decode_size);
         decode_size += ret;
     }
-
+    auto ret = _->video_codec->DecodePacketIntoFrames({}, dst_ptr + decode_size, size - decode_size);
+    decode_size += ret;
     return true;
 }
 
@@ -1520,6 +1541,10 @@ bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
         _->video_codec->EncodeFrameIntoPackets(dst_ptr, slice_size, tmp_packets);
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
+    //one more for end
+    Packets tmp_packets;
+    _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
+    packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     return true;
 }
 

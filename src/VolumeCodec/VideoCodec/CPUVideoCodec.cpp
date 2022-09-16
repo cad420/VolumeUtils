@@ -26,12 +26,24 @@ bool CPUVideoCodec::ReSet(const VideoCodec::CodecParams &params) {
 
 void CPUVideoCodec::EncodeFrameIntoPackets(const void *buf, size_t size, Packets &packets) {
     assert(_->codec.IsValid());
-    _->codec.EncodeFrameIntoPackets(buf, size, packets);
+    try{
+        _->codec.EncodeFrameIntoPackets(buf, size, packets);
+    }
+    catch (const VideoCodecError& e) {
+        packets.clear();
+        std::cerr << e.what() << std::endl;
+    }
 }
 
 size_t CPUVideoCodec::DecodePacketIntoFrames(const Packet &packet, void *buf, size_t size) {
     assert(_->codec.IsValid());
-    return _->codec.DecodePacketIntoFrames(packet, buf, size);
+    try {
+        return _->codec.DecodePacketIntoFrames(packet, buf, size);
+    }
+    catch (const VideoCodecError& e) {
+        std::cerr << e.what() << std::endl;
+        return 0;
+    }
 }
 
 
