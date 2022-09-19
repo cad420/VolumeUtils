@@ -20,47 +20,46 @@ private:
 };
 
 template<int Bits>
-void CopyBits(const uint8_t* src, uint8_t* dst){
+inline void CopyBits(const uint8_t* src, uint8_t* dst){
     for(int i = 0; i < Bits; i++){
         *(dst++) = *(src++);
     }
 }
 
-void CopyNBits(const uint8_t* src, uint8_t* dst, size_t bits){
+inline void CopyNBits(const uint8_t* src, uint8_t* dst, size_t bits){
     for(int i = 0; i < bits; i++){
         *(dst++) = *(src++);
     }
 }
 
 template<>
-void CopyBits<1>(const uint8_t* src, uint8_t* dst){
+inline void CopyBits<1>(const uint8_t* src, uint8_t* dst){
     *dst = *src;
 }
 
 
 template<>
-void CopyBits<2>(const uint8_t* src, uint8_t* dst){
+inline void CopyBits<2>(const uint8_t* src, uint8_t* dst){
     auto psrc = reinterpret_cast<const uint16_t*>(src);
     auto pdst = reinterpret_cast<uint16_t*>(dst);
     *dst = *src;
 }
 
 template<>
-void CopyBits<4>(const uint8_t* src, uint8_t* dst){
+inline void CopyBits<4>(const uint8_t* src, uint8_t* dst){
     auto psrc = reinterpret_cast<const uint32_t*>(src);
     auto pdst = reinterpret_cast<uint32_t*>(dst);
     *dst = *src;
 }
 
 template<>
-void CopyBits<8>(const uint8_t* src, uint8_t* dst){
+inline void CopyBits<8>(const uint8_t* src, uint8_t* dst){
     auto psrc = reinterpret_cast<const uint64_t*>(src);
     auto pdst = reinterpret_cast<uint64_t*>(dst);
     *dst = *src;
 }
 
-
-auto GetCopyBitsFunc(size_t voxel_size){
+inline auto GetCopyBitsFunc(size_t voxel_size){
     std::function<void(const uint8_t*,uint8_t*)> f;
     switch (voxel_size) {
         case 1 : f = CopyBits<1>;

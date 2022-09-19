@@ -9,7 +9,7 @@ class GPUVideoCodec final : public VideoCodec{
 public:
     GPUVideoCodec();
 
-    ~GPUVideoCodec();
+    ~GPUVideoCodec() override;
 
     bool ReSet(const CodecParams& params) override;
 

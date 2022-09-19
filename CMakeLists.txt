@@ -25,6 +25,27 @@ target_compile_features(
         cxx_std_20
 )
 
+set(
+    LIBTIFF_LIBS
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/lib/x64/tiff.lib
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/lib/x64/tiffd.lib
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/lib/x64/tiffxx.lib
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/lib/x64/tiffxxd.lib
+)
+
+set(
+        FFMPEG_LIBS
+        ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/lib/x64/avcodec.lib
+        ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/lib/x64/avutil.lib
+)
+
+target_link_libraries(
+        VolumeUtils
+        PRIVATE
+        ${LIBTIFF_LIBS}
+        ${FFMPEG_LIBS}
+)
+
 add_subdirectory(test)
 
-add_subdirectory(tools)
+add_subdirectory(tool)

@@ -53,6 +53,16 @@ enum class VoxelFormat :int{
     NONE = 0, R = 1, RG = 2, RGB = 3, RGBA = 4
 };
 
+inline constexpr bool IsVoxelTypeInteger(VoxelType type){
+    switch (type) {
+        case VoxelType::uint8:
+        case VoxelType::uint16: return true;
+        case VoxelType::float32: return false;
+        case VoxelType::unknown:
+        default: return true;
+    }
+}
+
 inline constexpr int GetVoxelSampleCount(VoxelFormat format) {
     int nSamples = 0;
     switch (format) {
@@ -154,7 +164,7 @@ inline constexpr size_t GetVoxelSize(const VoxelInfo& info){
     return GetVoxelSize(info.type,info.format);
 }
 
-bool CheckValidation(const VoxelInfo& info){
+inline bool CheckValidation(const VoxelInfo& info){
     return GetVoxelSize(info) != 0;
 }
 
@@ -167,6 +177,7 @@ struct Voxel<VoxelType::uint8, VoxelFormat::R> {
         uint8_t x = 0;
         uint8_t r;
     };
+    using VoxelDataType = uint8_t;
     static constexpr VoxelType type = VoxelType::uint8;
     static constexpr VoxelFormat format = VoxelFormat::R;
     static constexpr size_t size() { return 1; }
@@ -180,6 +191,7 @@ struct Voxel<VoxelType::uint16, VoxelFormat::R> {
         uint16_t x = 0;
         uint16_t r;
     };
+    using VoxelDataType = uint16_t;
     static constexpr VoxelType type = VoxelType::uint16;
     static constexpr VoxelFormat format = VoxelFormat::R;
     static constexpr size_t size() { return 2; }
@@ -526,13 +538,13 @@ struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     }
 };
 
-bool CheckValidation(SliceAxis axis){
+inline bool CheckValidation(SliceAxis axis){
     return axis == SliceAxis::AXIS_X
     || axis == SliceAxis::AXIS_Y
     || axis == SliceAxis::AXIS_Z;
 }
 
-bool CheckValidation(const SlicedGridVolumeDesc& desc){
+inline bool CheckValidation(const SlicedGridVolumeDesc& desc){
     if(!CheckValidation(static_cast<const RawGridVolumeDesc&>(desc))) return false;
     return CheckValidation(desc.axis) && desc.setw >= 0;
 }
@@ -838,6 +850,9 @@ public:
 public:
     const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
+    /**
+     * @brief this method will recover blocks between src and dst region, so tack care of it.
+     */
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
@@ -1085,6 +1100,15 @@ using GPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::GPU, std::enable_if
 
 struct VolumeFileDesc{
     //todo use std::variant
+    VolumeFileDesc() {
+
+    };
+    ~VolumeFileDesc(){
+
+    }
+    VolumeFileDesc(const VolumeFileDesc& other){
+
+    }
     union{
       RawGridVolumeDesc raw_desc;
       SlicedGridVolumeDesc sliced_desc;
@@ -1093,6 +1117,17 @@ struct VolumeFileDesc{
       EncodedBlockedGridVolumeDesc encoded_blocked_desc;
     };
 };
+
+inline bool CheckValidation(const VolumeFileDesc& desc, VolumeType type){
+    switch (type) {
+        case VolumeType::Grid_RAW : return CheckValidation(desc.raw_desc);
+        case VolumeType::Grid_SLICED : return CheckValidation(desc.sliced_desc);
+        case VolumeType::Grid_BLOCKED_ENCODED : return CheckValidation(desc.encoded_blocked_desc);
+        case VolumeType::Grid_ENCODED : return CheckValidation(desc.encoded_desc);
+        case VolumeType::Grid_BLOCKED : return CheckValidation(desc.blocked_desc);
+        default : return false;
+    }
+}
 
 // volume describe data and meta data path
 class VolumeFile{
