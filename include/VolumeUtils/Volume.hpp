@@ -214,14 +214,6 @@ struct Extend3D {
 };
 
 
-
-//histogram
-template<typename Voxel>
-class VolumeStatistics{
-public:
-
-};
-
 enum class VolumeType{
     Grid_RAW,
     Grid_SLICED,
@@ -523,7 +515,7 @@ enum class SliceAxis : int {
 };
 
 struct SlicedGridVolumeDesc : RawGridVolumeDesc{
-    SliceAxis axis;
+    SliceAxis axis = SliceAxis::AXIS_Z;
     std::function<std::string(uint32_t)> name_generator;
     std::string prefix;
     std::string postfix;
@@ -884,21 +876,29 @@ public:
     : SliceDataView(0, 0, nullptr, nullptr)
     {}
 
-    SliceDataView(uint32_t sizeX, uint32_t sizeY,const T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
+    SliceDataView(uint32_t sizeX, uint32_t sizeY,T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
     :sizeX(sizeX),sizeY(sizeY),data(srcP),map(map)
     {}
 
     const T& At(int x,int y) const{
-        if(map){
-            return map(x,y);
-        }
+//        if(map){
+//            return map(x,y);
+//        }
+        return data[x + y * sizeX];
+    }
+
+    T& At(int x,int y){
+        //todo
+//        if(map){
+//            return map(x,y);
+//        }
         return data[x + y * sizeX];
     }
 
     template<typename>
     friend class GridDataView;
 
-    const T* data;
+    T* data;
     uint32_t sizeX,sizeY;
 private:
     std::function<T(int x,int y)> map;
@@ -911,7 +911,7 @@ public:
     : GridDataView(0,0,0,nullptr)
     {}
 
-    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,const T *srcP)
+    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,T *srcP)
     :size_x(sizeX),size_y(sizeY),size_z(sizeZ),data(srcP)
     {
         assert(data && size_x && size_y && size_z);
@@ -943,8 +943,16 @@ public:
         return data[idx];
     }
 
+    T& At(int x, int y, int z){
+        if(x < 0 || x >= size_x || y < 0 || y >= size_y || z < 0 || z >= size_z){
+            return T();
+        }
+        size_t idx = size_t(z) * size_x * size_y + y * size_x +x;
+        return data[idx];
+    }
+
     uint32_t size_x = 0,size_y = 0,size_z = 0;
-    const T* data;
+    T* data;
 };
 
 enum class CodecDevice {
@@ -1144,6 +1152,20 @@ public:
 
     //get tf...
 };
+
+//histogram
+template<VolumeType type>
+class VolumeStatistics;
+
+template<>
+class VolumeStatistics<VolumeType::Grid_RAW>{
+public:
+    VolumeStatistics(const std::string& filename, const RawGridVolumeDesc& desc){
+
+    }
+};
+
+
 
 /**
  * @note Volume model created by *IOWrapper will be associated with file.

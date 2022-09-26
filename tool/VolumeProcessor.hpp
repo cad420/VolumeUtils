@@ -26,11 +26,12 @@ inline constexpr VolumeTypeBits GetVolumeTypeBits(VolumeType type){
         default: return VolumeTypeBits::Unknown;
     }
 }
-enum class Operation : int{
+enum Operation : int{
     None = 0,
-    DownSampling = 1,
-    Statistics = 2,
-    Mapping = 4
+    Mapping = 1,
+    DownSampling = 2,
+    Statistics = 4,
+
 };
 
 template<typename Voxel>
@@ -42,17 +43,18 @@ public:
     };
     using ArgT = std::conditional_t<sizeof(Voxel) >= 9, const Voxel&, Voxel>;
     using Func = std::function<Voxel(ArgT, ArgT)>;
-
-    DownSamplingOp( SamplingMethod method){
+    using VoxelDataType = typename Voxel::VoxelDataType;
+    DownSamplingOp( SamplingMethod method = AVG){
         if(method == AVG){
             func = [](ArgT a, ArgT b)->Voxel{
                 if constexpr(IsVoxelTypeInteger(Voxel::type)){
                     // unsigned int
-                    return {(a.r > b.r) ? b.r + ((a.r - b.r) >> 1) : a.r + ((b.r - a.r) >> 1)};
+                    // ?
+                    return Voxel{(a.r > b.r) ? static_cast<VoxelDataType>(b.r + static_cast<VoxelDataType>((a.r - b.r) >> 1)) :  static_cast<VoxelDataType>(a.r + static_cast<VoxelDataType>((b.r - a.r) >> 1))};
                 }
                 else{
                     // float
-                    return {a.r + (b.r - a.r) * 0.5};
+                    return Voxel{a.r + (b.r - a.r) * 0.5};
                 }
             };
         }
@@ -66,7 +68,9 @@ public:
     :func(std::move(f))
     {
     }
+    ~DownSamplingOp(){
 
+    }
     Func GetOp() const{
         return func;
     }
@@ -78,9 +82,15 @@ private:
 template<typename Voxel>
 class StatisticsOp{
 public:
+    StatisticsOp(){
+
+    }
+    ~StatisticsOp(){
+
+    }
     using ArgT = std::conditional_t<sizeof(Voxel) >= 9, const Voxel&, Voxel>;
-    void AddVoxel(ArgT voxel){
-        his[voxel.r] += 1;
+    void AddVoxel(ArgT voxel) const {
+//        his[voxel.r] += 1;
     }
 private:
     std::unordered_map<typename Voxel::VoxelDataType,size_t> his;
@@ -106,6 +116,15 @@ public:
         };
     }
 
+    MappingOp(MappingOp&& rhs) noexcept{
+        func = std::move(rhs.func);
+    }
+
+    MappingOp& operator=(MappingOp&& rhs) noexcept{
+        new(this) MappingOp(std::move(rhs));
+        return *this;
+    }
+
 
     void AddOp(Func fun){
         Func f = [func = std::move(this->func), fn = std::move(fun)](ArgT a)->Voxel{
@@ -123,6 +142,9 @@ public:
             AddOp_MAX(rhs);
         else if(op == MIN)
             AddOp_MIN(rhs);
+    }
+    Func GetOp() const{
+        return func;
     }
 private:
     void AddOp_ADD(ArgT rhs){
@@ -157,12 +179,29 @@ private:
     Func func;
 };
 
+// always process by order mapping, down sampling, statistics
 template<typename Voxel>
 class Operations{
 public:
-    std::variant<DownSamplingOp<Voxel>,StatisticsOp<Voxel>,MappingOp<Voxel>> op_func;
-    Operation op;
-    Operations* next = nullptr;
+    Operations& AddMapping(MappingOp<Voxel> mp){
+        mapping = std::move(mp);
+        op_mask |= Operation::Mapping;
+        return *this;
+    }
+    Operations& AddDownSampling(DownSamplingOp<Voxel> ds){
+        down_sampling = std::move(ds);
+        op_mask |= Operation::DownSampling;
+        return *this;
+    }
+    Operations& AddStatistics(StatisticsOp<Voxel> ss){
+        statistics = std::move(ss);
+        op_mask |= Operation::Statistics;
+        return *this;
+    }
+    MappingOp<Voxel> mapping;
+    DownSamplingOp<Voxel> down_sampling;
+    StatisticsOp<Voxel> statistics;
+    int op_mask = 0;
 };
 
 
@@ -196,13 +235,20 @@ public:
 
             return *this;
         }
+        std::string output;
         VolumeType type;
         VolumeDescT desc;
-        std::vector<Operations<Voxel>> ops;
+        Operations<Voxel> ops;
     };
 
+    /**
+     * @note ops in Unit parse by SetSource will be ignored.
+     */
     virtual Processor& SetSource(const Unit& u, const VolumeRange& range) = 0;
 
+    /**
+     * @brief one unit for one output target.
+     */
     virtual Processor& AddTarget(const Unit& u) = 0;
 
     virtual void Convert() = 0;
