@@ -4,7 +4,8 @@
     "processor": "",
     "id": ""
   },
-  "encoded_blocked": {
+  "volume_type": "encoded_blocked",
+  "desc": {
     "volume_name": "",
     "voxel_type": "uint8",
     "voxel_format": "r",

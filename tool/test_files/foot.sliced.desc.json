@@ -4,7 +4,8 @@
     "processor": "",
     "id": ""
   },
-  "sliced": {
+  "volume_type": "sliced",
+  "desc": {
     "slice_format": ".tif",
     "volume_name": "foot",
     "voxel_type": "uint8",

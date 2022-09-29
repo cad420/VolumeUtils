@@ -433,7 +433,7 @@ public:
     using SelfT = RawGridVolume<Voxel>;
     static constexpr VolumeType EVolumeType = VolumeType::Grid_RAW;
 
-    RawGridVolume(const RawGridVolumeDesc &desc);
+    explicit RawGridVolume(const RawGridVolumeDesc &desc);
 
     ~RawGridVolume();
 
@@ -454,12 +454,17 @@ public:
 public:
     // help functions
     template<typename F>
-    SelfT Map(F&& f) const noexcept;
+    SelfT Map(F&& f) const noexcept{
+
+    }
 
     template<typename F>
-    void MapInplace(F&& f) noexcept;
+    void MapInplace(F&& f) noexcept{
+
+    }
 
     const RawGridVolumeDesc &GetVolumeDesc() const;
+
 public:
     Voxel* GetRawDataPtr() noexcept;
 
@@ -862,106 +867,445 @@ private:
     std::unique_ptr<EncodedBlockedGridVolumeWriterPrivate> _;
 };
 
-template<typename T>
+template<typename,bool>
 class GridDataView;
 
-/**
- * @brief like string_view.
- * @note only parse cpu ptr, or if you know what you are doing.
- */
+template<typename, bool>
+class SliceDataView;
+
 template<typename T>
-class SliceDataView {
+class SliceData{
 public:
-    SliceDataView()
-    : SliceDataView(0, 0, nullptr, nullptr)
-    {}
-
-    SliceDataView(uint32_t sizeX, uint32_t sizeY,T *srcP = nullptr,std::function<T(int,int)> map = nullptr)
-    :sizeX(sizeX),sizeY(sizeY),data(srcP),map(map)
-    {}
-
-    const T& At(int x,int y) const{
-//        if(map){
-//            return map(x,y);
-//        }
-        return data[x + y * sizeX];
+    SliceData(uint32_t sizeX, uint32_t sizeY, const T& init = T{})
+    :sizeX(sizeX),sizeY(sizeY)
+    {
+        size_t count = (size_t)sizeX * sizeY;
+        assert(count);
+        data = static_cast<T*>(std::malloc(sizeof(T) * count));
+        for(size_t i = 0; i < count; i++)
+            data[i] = init;
     }
 
-    T& At(int x,int y){
-        //todo
-//        if(map){
-//            return map(x,y);
-//        }
-        return data[x + y * sizeX];
+    SliceData(uint32_t sizeX, uint32_t sizeY, const T* srcP)
+    :sizeX(sizeX), sizeY(sizeY)
+    {
+        size_t count = (size_t)sizeX * sizeY;
+        assert(count);
+        data = static_cast<T*>(std::malloc(sizeof(T) * count));
+        std::memcpy(data, srcP, sizeof(T) * count);
     }
 
-    template<typename>
-    friend class GridDataView;
+    ~SliceData(){
+        if(data){
+            free(data);
+        }
+    }
 
-    T* data;
-    uint32_t sizeX,sizeY;
+    const T& At(uint32_t x, uint32_t y) const{
+        if(x >= sizeX || y >= sizeY){
+            throw std::out_of_range("SliceData At out of range");
+        }
+        return this->operator()(x, y);
+    }
+
+    T& At(uint32_t x, uint32_t y){
+        if(x >= sizeX || y >= sizeY){
+            throw std::runtime_error("SliceData At out of range");
+        }
+        return this->operator()(x, y);
+    }
+
+    T& operator()(uint32_t x, uint32_t y) {
+        return data[(size_t)y * sizeX + x];
+    }
+
+    const T& operator()(uint32_t x, uint32_t y) const {
+        return data[(size_t)y * sizeX + x];
+    }
+
+    SliceDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy);
+
+    SliceDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const;
+
+    SliceDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const;
+
+    auto Width() const{
+        return sizeX;
+    }
+
+    auto Height() const{
+        return sizeY;
+    }
+
+    size_t Size() const{
+        return (size_t)sizeX * sizeY;
+    }
+
+    T* GetRawPtr(){
+        return data;
+    }
+
+    const T* GetRawPtr() const {
+        return data;
+    }
+
 private:
-    std::function<T(int x,int y)> map;
+    T* data;
+    uint32_t sizeX;
+    uint32_t sizeY;
+};
+
+template<typename T, bool CONST = false>
+class SliceDataView {
+
+    using DataT = std::conditional_t<CONST, const SliceData<T>*, SliceData<T>*>;
+
+public:
+    SliceDataView(uint32_t oriX, uint32_t oriY, uint32_t sizeX, uint32_t sizeY, DataT srcP)
+    :oriX(oriX), oriY(oriY), sizeX(sizeX), sizeY(sizeY), data(srcP)
+    {
+
+    }
+
+    T& operator()(uint32_t x, uint32_t y){
+        return data->operator()(oriX + x, oriY + y);
+    }
+
+    const T& operator()(uint32_t x, uint32_t y) const {
+        return data->operator()(x, y);
+    }
+
+    const T& At(uint32_t x,uint32_t y) const{
+        if(x >= sizeX || y >= sizeY){
+            throw std::runtime_error("SliceDataView At out of range");
+        }
+        return this->operator()(x, y);
+    }
+
+    T& At(uint32_t x,uint32_t y){
+        if(x >= sizeX || y >= sizeY){
+            throw std::runtime_error("SliceDataView At out of range");
+        }
+        return this->operator()(x, y);
+    }
+
+    SliceDataView GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy){
+        return SliceDataView(oriX + ox, oriY + oy, sx, sy, data);
+    }
+    SliceDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
+        return SliceDataView<T,true>(oriX + ox, oriY + oy, sx, sy, data);
+    }
+    SliceDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
+        return SliceDataView<T,true>(oriX + ox, oriY + oy, sx, sy, data);
+    }
+
+    bool IsValid() const{
+        return data && sizeX && sizeY;
+    }
+
+    bool IsLinear() const{
+        return oriX == 0 && oriY == 0;
+    }
+
+    auto Width() const{
+        return sizeX;
+    }
+
+    auto Height() const{
+        return sizeY;
+    }
+    T* GetRawPtr(){
+        return data->GetRawPtr();
+    }
+
+    const T* GetRawPtr() const {
+        return data->GetRawPtr();
+    }
+private:
+    DataT data;
+    uint32_t sizeX, sizeY;
+    uint32_t oriX, oriY;
 };
 
 template<typename T>
-class GridDataView {
+SliceDataView<T, false> SliceData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) {
+    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
+}
+template<typename T>
+SliceDataView<T,true> SliceData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
+    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
+}
+template<typename T>
+SliceDataView<T,true> SliceData<T>::GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
+    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
+}
+
+template<typename T>
+class SliceView{
 public:
-    GridDataView()
-    : GridDataView(0,0,0,nullptr)
+    SliceView(uint32_t sizeX, uint32_t sizeY, const T* srcP)
+    :sizeX(sizeX), sizeY(sizeY), data(srcP)
+    {
+        assert(sizeX && sizeY && srcP);
+    }
+
+
+    const T& operator()(uint32_t x, uint32_t y) const {
+        return data[(size_t)y * sizeX + x];
+    }
+
+
+    const T& At(uint32_t x, uint32_t y) const {
+        if(x >= sizeX || y >= sizeY){
+            throw std::out_of_range("SliceView At out of range");
+        }
+        return this->operator()(x, y);
+    }
+
+    uint32_t sizeX, sizeY;
+    const T* data;
+};
+
+
+template<typename T>
+class GridData{
+public:
+    GridData(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const T& init = T{})
+    :sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ)
+    {
+        size_t count = (size_t)sizeX * sizeY * sizeZ;
+        assert(count);
+        data = static_cast<T*>(std::malloc(count * sizeof(T)));
+        for(size_t i = 0; i < count; i++)
+            data[i] = init;
+    }
+
+    GridData(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const T* srcP)
+    :sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ)
+    {
+        size_t count = (size_t)sizeX * sizeY * sizeZ;
+        assert(count);
+        data = static_cast<T*>(std::malloc(count * sizeof(T)));
+        std::memcpy(data, srcP, count * sizeof(T));
+    }
+
+    SliceData<T> GetSliceDataX(uint32_t x) const{
+        SliceData<T> slice(sizeY, sizeZ);
+        for(uint32_t z = 0; z < sizeZ; z++){
+            for(uint32_t y = 0; y < sizeY; y++){
+                slice(y, z) = this->operator()(x, y, z);
+            }
+        }
+        return slice;
+    }
+
+    SliceData<T> GetSliceDataY(uint32_t y) const{
+        SliceData<T> slice(sizeZ, sizeX);
+        for(uint32_t z = 0; z < sizeZ; z++){
+            for(uint32_t x = 0; x < sizeX; x++){
+                slice(z, x) = this->operator()(x, y, z);
+            }
+        }
+        return slice;
+    }
+
+    SliceData<T> GetSliceDataZ(uint32_t z) const{
+        SliceData<T> slice(sizeX, sizeY);
+        for(uint32_t y = 0; y < sizeY; y++){
+            for(uint32_t x = 0; x < sizeX; x++){
+                slice(x, y) = this->operator()(x, y, z);
+            }
+        }
+        return slice;
+    }
+
+    T& operator()(uint32_t x, uint32_t y, uint32_t z){
+        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
+    }
+
+    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const {
+        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
+    }
+
+    T& At(uint32_t x, uint32_t y, uint32_t z){
+        if(x >= sizeX || y >= sizeY || z >= sizeZ){
+            throw std::out_of_range("GridData At out of range");
+        }
+        return this->operator()(x, y, z);
+    }
+
+    const T& At(uint32_t x, uint32_t y, uint32_t z) const {
+        if(x >= sizeX || y >= sizeY || z >= sizeZ){
+            throw std::out_of_range("GridData At out of range");
+        }
+        return this->operator()(x, y, z);
+    }
+
+    GridDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz);
+
+    GridDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const;
+
+    GridDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const;
+
+    auto Width() const{
+        return sizeX;
+    }
+
+    auto Height() const{
+        return sizeY;
+    }
+
+    auto Depth() const{
+        return sizeZ;
+    }
+
+    T* GetRawPtr(){
+        return data;
+    }
+
+    const T* GetRawPtr() const {
+        return data;
+    }
+
+    size_t Size() const{
+        return (size_t)sizeX * sizeY * sizeZ;
+    }
+
+private:
+    uint32_t sizeX;
+    uint32_t sizeY;
+    uint32_t sizeZ;
+    T* data;
+};
+
+template<typename T, bool CONST = false>
+class GridDataView {
+
+    using DataT = std::conditional_t<CONST, const GridData<T>*, GridData<T>*>;
+
+public:
+    GridDataView(uint32_t oriX, uint32_t oriY, uint32_t oriZ, uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, DataT srcP)
+    :oriX(oriX), oriY(oriY), oriZ(oriZ), sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ), data(srcP)
+    {
+
+    }
+    T& operator()(uint32_t x, uint32_t y, uint32_t z){
+        return data[size_t(z) * sizeX * sizeY + y * sizeX + x];
+    }
+
+    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const {
+        return data[size_t(z) * sizeX * sizeY + y * sizeX + x];
+    }
+
+    const T& At(uint32_t x, uint32_t y, uint32_t z) const{
+        if(x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ){
+            throw std::runtime_error("GridDataView out of range");
+        }
+        return this->operator()(x, y, z);
+    }
+
+    T& At(uint32_t x, uint32_t y, uint32_t z){
+        if(x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ){
+            throw std::runtime_error("GridDataView out of range");
+        }
+        size_t idx = size_t(z) * sizeX * sizeY + y * sizeX +x;
+        return data[idx];
+    }
+
+    GridDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz){
+        return GridDataView<T,false>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
+    }
+
+    GridDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
+        return GridDataView<T,true>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
+    }
+
+    GridDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
+        return GridDataView<T,true>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
+    }
+
+    bool IsValid() const{
+        return data && sizeX && sizeY && sizeZ;
+    }
+
+    bool IsLinear() const{
+        return oriX == 0 && oriY == 0 && oriZ == 0;
+    }
+
+    auto Width() const{
+        return sizeX;
+    }
+
+    auto Height() const{
+        return sizeY;
+    }
+
+    auto Depth() const{
+        return sizeZ;
+    }
+
+    T* GetRawPtr(){
+        return data->GetRawPtr;
+    }
+
+    const T* GetRawPtr() const {
+        return data->GetRawPtr;
+    }
+private:
+    uint32_t oriX, oriY, oriZ;
+    uint32_t sizeX, sizeY, sizeZ;
+    T* data;
+};
+
+template<typename T>
+GridDataView<T,false> GridData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) {
+    return GridDataView<T,false>(ox, oy, oz, sx, sy, sz, data);
+}
+
+template<typename T>
+GridDataView<T,true> GridData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
+    return GridDataView<T,true>(ox, oy, oz, sx, sy, sz, data);
+}
+
+template<typename T>
+GridDataView<T,true> GridData<T>::GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
+    return GridDataView<T,true>(ox, oy, oz, sx, sy, sz, data);
+}
+
+template<typename T>
+class GridView{
+public:
+    GridView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,const T* srcP)
+    :sizeX(sizeX),sizeY(sizeY),sizeZ(sizeZ),data(srcP)
     {}
 
-    GridDataView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,T *srcP)
-    :size_x(sizeX),size_y(sizeY),size_z(sizeZ),data(srcP)
-    {
-        assert(data && size_x && size_y && size_z);
+    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const{
+        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
     }
 
-    SliceDataView<T> ViewSliceX(uint32_t x) const {
-        std::function<const T&(int,int)> map = [x,this](int z,int y){
-            return this->At(x,size_y - 1 - y,z);
-        };
-        return SliceDataView<T>(size_z,size_y,nullptr,map);
-    }
 
-    SliceDataView<T> ViewSliceY(uint32_t y) const {
-        std::function<const T&(int,int)> map = [y,this](int x,int z){
-            return this->At(x,y,size_z - 1 -z);
-        };
-        return SliceDataView<T>(size_x,size_z,nullptr,map);
-    }
-
-    SliceDataView<T> ViewSliceZ(uint32_t z) const {
-        return SliceDataView<T>(size_x, size_y, data + (size_t)z * size_x * size_y, nullptr);
-    }
-
-    const T& At(int x, int y, int z) const{
-        if(x < 0 || x >= size_x || y < 0 || y >= size_y || z < 0 || z >= size_z){
-            return T();
+    const T& At(uint32_t x, uint32_t y, uint32_t z) const {
+        if(x >= sizeX || y >= sizeY || z >= sizeZ){
+            throw std::out_of_range("GridView At out of range");
         }
-        size_t idx = size_t(z) * size_x * size_y + y * size_x +x;
-        return data[idx];
+        return this->operator()(x, y, z);
     }
 
-    T& At(int x, int y, int z){
-        if(x < 0 || x >= size_x || y < 0 || y >= size_y || z < 0 || z >= size_z){
-            return T();
-        }
-        size_t idx = size_t(z) * size_x * size_y + y * size_x +x;
-        return data[idx];
-    }
-
-    uint32_t size_x = 0,size_y = 0,size_z = 0;
-    T* data;
+    const T* data;
+    uint32_t sizeX;
+    uint32_t sizeY;
+    uint32_t sizeZ;
 };
 
 enum class CodecDevice {
     CPU, GPU
 };
+
 template<typename Voxel,CodecDevice device>
 struct VoxelVideoCodec{
     static constexpr bool Value = false;
 };
+
 #define Register_VoxelVideoCodec(VoxelT,device) \
 template<>\
 struct VoxelVideoCodec<VoxelT,device>{\
@@ -1304,8 +1648,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
             _->thread_count
     };
     if(!_->video_codec->ReSet(params)) return false;
-//    auto p = reinterpret_cast<const VoxelRU8 *>(buf);
-    GridDataView<T> data_view(w, h, d, reinterpret_cast<const T*>(buf));
+    GridView<T> data_view(w, h, d, reinterpret_cast<const T*>(buf));
     auto voxel_size = GetVoxelSize(T::type, T::format);
     const size_t slice_size = w * d * voxel_size;
     // only encode buf with size
@@ -1313,7 +1656,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
     for(int z = 0; z < d + 1; z++){
         Packets tmp_packets;
         if(z < d)
-            _->video_codec->EncodeFrameIntoPackets(data_view.ViewSliceZ(z).data, slice_size, tmp_packets);
+            _->video_codec->EncodeFrameIntoPackets(&data_view.At(0, 0, z), slice_size, tmp_packets);
         else
             // one more for end
             _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
@@ -1375,29 +1718,62 @@ size_t CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slice
 
 template<typename T>
 size_t CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) {
-    std::vector<SliceDataView<T>> slices;
-    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
-        slices.resize(count);
-        for(int i = 0; i < count; i++)
-            slices.emplace_back(std::invoke(f,p,i));
-    };
-    if(axis == SliceAxis::AXIS_X)
-        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
-    else if(axis == SliceAxis::AXIS_Y)
-        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
-    else if(axis == SliceAxis::AXIS_Z)
-        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
-    else
-        return 0;
-    return Encode(slices, buf, size);
+    GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
+    if(axis == SliceAxis::AXIS_Z){
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(x, y, z) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_Y){
+        // x y z -> z x y
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(z, x, y) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_X){
+        // x y z - > y z x
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(y, z, x) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    Packets packets;
+    auto ret = Encode({grid.Width(), grid.Height(), grid.Depth()}, grid.GetRawPtr(), grid.Size() * sizeof(T), packets);
+    if(!ret) return 0;
+    // buf must be cpu
+    (void)(*(uint8_t*)buf);
+    // packets to linear buf
+    size_t packet_size = 0;
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    for(auto& packet : packets){
+        if(packet_size >= size) break;
+        size_t s = packet.size();
+        std::memcpy(dst_ptr + packet_size, &s, sizeof(size_t));
+        packet_size += sizeof(size_t);
+        std::memcpy(dst_ptr + packet_size, packet.data(), packet.size());
+        packet_size += packet.size();
+    }
+
+    return packet_size;
 }
 
 template<typename T>
 bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) {
     // SliceDataView' storage maybe not linear because of map
     auto voxel_size = T::size();
-    auto width = slices.front().sizeX;
-    auto height = slices.front().sizeY;
+    auto width = slices.front().Width();
+    auto height = slices.front().Height();
     auto depth = slices.size();
     auto slice_size = voxel_size * width * height;
     VideoCodec::CodecParams params{
@@ -1407,16 +1783,18 @@ bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
             _->thread_count
     };
     if(!_->video_codec->ReSet(params)) return false;
-    auto slice_buffer = std::vector<uint8_t>(slice_size, 0);
-    auto dst_ptr = slice_buffer.data();
+    SliceData<T> slice_data(width, height);
     for(auto& slice : slices){
-        size_t offset = 0;
-        for(int i = 0; i < height; i++)
-            for(int j = 0; j < width; j++)
-                std::memcpy(dst_ptr + offset, &slice.At(j, i), voxel_size), offset += voxel_size;
-        assert(offset == slice_size);
         Packets tmp_packets;
-        _->video_codec->EncodeFrameIntoPackets(dst_ptr, slice_size, tmp_packets);
+        if(slice.IsLinear()){
+            _->video_codec->EncodeFrameIntoPackets(slice.GetRawPtr(), slice_size, tmp_packets);
+        }
+        else{
+            for(int i = 0; i < height; i++)
+                for(int j = 0; j < width; j++)
+                    slice_data(j, i) = slice(j, i);
+            _->video_codec->EncodeFrameIntoPackets(slice_data.GetRawPtr(), slice_size, tmp_packets);
+        }
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
     //one more for end
@@ -1428,22 +1806,38 @@ bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
 
 template<typename T>
 bool CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) {
-    std::vector<SliceDataView<T>> slices;
-    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
-        slices.resize(count);
-        for(int i = 0; i < count; i++)
-            slices.emplace_back(std::invoke(f,p,i));
-    };
-    if(axis == SliceAxis::AXIS_X)
-        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
-    else if(axis == SliceAxis::AXIS_Y)
-        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
-    else if(axis == SliceAxis::AXIS_Z)
-        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
-    else
-        return false;
-
-    return Encode(slices, packets);
+    GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
+    if(axis == SliceAxis::AXIS_Z){
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(x, y, z) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_Y){
+        // x y z -> z x y
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(z, x, y) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_X){
+        // x y z - > y z x
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(y, z, x) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    auto ret = Encode({grid.Width(), grid.Height(), grid.Depth()}, grid.GetRawPtr(), grid.Size() * sizeof(T), packets);
+    return ret > 0;
 }
 
 
@@ -1553,21 +1947,54 @@ size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slice
 
 template<typename T>
 size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) noexcept {
-    std::vector<SliceDataView<T>> slices;
-    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
-        slices.resize(count);
-        for(int i = 0; i < count; i++)
-            slices.emplace_back(std::invoke(f,p,i));
-    };
-    if(axis == SliceAxis::AXIS_X)
-        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
-    else if(axis == SliceAxis::AXIS_Y)
-        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
-    else if(axis == SliceAxis::AXIS_Z)
-        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
-    else
-        return 0;
-    return Encode(slices, buf, size);
+    GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
+    if(axis == SliceAxis::AXIS_Z){
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(x, y, z) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_Y){
+        // x y z -> z x y
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(z, x, y) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_X){
+        // x y z - > y z x
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(y, z, x) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    Packets packets;
+    auto ret = Encode({grid.Width(), grid.Height(), grid.Depth()}, grid.GetRawPtr(), grid.Size() * sizeof(T), packets);
+    if(!ret) return 0;
+    // buf must be cpu
+    (void)(*(uint8_t*)buf);
+    // packets to linear buf
+    size_t packet_size = 0;
+    auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
+    for(auto& packet : packets){
+        if(packet_size >= size) break;
+        size_t s = packet.size();
+        std::memcpy(dst_ptr + packet_size, &s, sizeof(size_t));
+        packet_size += sizeof(size_t);
+        std::memcpy(dst_ptr + packet_size, packet.data(), packet.size());
+        packet_size += packet.size();
+    }
+
+    return packet_size;
 }
 
 template<typename T>
@@ -1586,16 +2013,18 @@ bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
             .context = _->context
     };
     if(!_->video_codec->ReSet(params)) return false;
-    auto slice_buffer = std::vector<uint8_t>(slice_size, 0);
-    auto dst_ptr = slice_buffer.data();
+    SliceData<T> slice_data(width, height);
     for(auto& slice : slices){
-        size_t offset = 0;
-        for(int i = 0; i < height; i++)
-            for(int j = 0; j < width; j++)
-                std::memcpy(dst_ptr + offset, &slice.At(j, i), voxel_size), offset += voxel_size;
-        assert(offset == slice_size);
         Packets tmp_packets;
-        _->video_codec->EncodeFrameIntoPackets(dst_ptr, slice_size, tmp_packets);
+        if(slice.IsLinear()){
+            _->video_codec->EncodeFrameIntoPackets(slice.GetRawPtr(), slice_size, tmp_packets);
+        }
+        else{
+            for(int i = 0; i < height; i++)
+                for(int j = 0; j < width; j++)
+                    slice_data(j, i) = slice(j, i);
+            _->video_codec->EncodeFrameIntoPackets(slice_data.GetRawPtr(), slice_size, tmp_packets);
+        }
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
     //one more for end
@@ -1607,22 +2036,38 @@ bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
 
 template<typename T>
 bool GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) noexcept {
-    std::vector<SliceDataView<T>> slices;
-    auto generate_slices = [p = &volume, &slices](auto f, uint32_t count){
-        slices.resize(count);
-        for(int i = 0; i < count; i++)
-            slices.emplace_back(std::invoke(f,p,i));
-    };
-    if(axis == SliceAxis::AXIS_X)
-        generate_slices(&GridDataView<T>::ViewSliceX, volume.size_x);
-    else if(axis == SliceAxis::AXIS_Y)
-        generate_slices(&GridDataView<T>::ViewSliceY, volume.size_y);
-    else if(axis == SliceAxis::AXIS_Z)
-        generate_slices(&GridDataView<T>::ViewSliceZ, volume.size_z);
-    else
-        return false;
-
-    return Encode(slices, packets);
+    GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
+    if(axis == SliceAxis::AXIS_Z){
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(x, y, z) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_Y){
+        // x y z -> z x y
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(z, x, y) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    else if(axis == SliceAxis::AXIS_X){
+        // x y z - > y z x
+        for(uint32_t z = 0; z < grid.Depth(); z++){
+            for(uint32_t y = 0; y < grid.Height(); y++){
+                for(uint32_t x = 0; x < grid.Width(); x++){
+                    grid(y, z, x) = volume(x, y, z);
+                }
+            }
+        }
+    }
+    auto ret = Encode({grid.Width(), grid.Height(), grid.Depth()}, grid.GetRawPtr(), grid.Size() * sizeof(T), packets);
+    return ret > 0;
 }
 
 VOL_END
