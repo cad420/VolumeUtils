@@ -46,7 +46,7 @@ struct IOImpl {
         int z_read_count = (read_z_size + block_length - 1) / block_length;
         int x_block_count = (read_x_size + block_length - 1) / block_length;
 
-        EncodedBlockedGridVolumeWriter encoded_blocked_writer(oblocked_encoded_unit.output, oblocked_encoded_desc);
+        EncodedBlockedGridVolumeWriter encoded_blocked_writer(oblocked_encoded_unit.desc_filename, oblocked_encoded_desc);
         auto eb_mapping_func = oblocked_encoded_unit.ops.mapping.GetOp();
         StatisticsOp<Voxel> eb_ss;
 

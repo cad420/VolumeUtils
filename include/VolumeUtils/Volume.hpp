@@ -30,6 +30,7 @@
 #include <ostream>
 #include <sstream>
 #include <iomanip>
+#include <variant>
 
 VOL_BEGIN
 
@@ -1459,7 +1460,15 @@ struct VolumeFileDesc{
 
     }
     VolumeFileDesc(const VolumeFileDesc& other){
-
+        raw_desc = other.raw_desc;
+        sliced_desc = other.sliced_desc;
+        blocked_desc = other.blocked_desc;
+        encoded_desc = other.encoded_desc;
+        encoded_blocked_desc = other.encoded_blocked_desc;
+    }
+    VolumeFileDesc& operator=(const VolumeFileDesc& other){
+        new(this) VolumeFileDesc(other);
+        return *this;
     }
     union{
       RawGridVolumeDesc raw_desc;

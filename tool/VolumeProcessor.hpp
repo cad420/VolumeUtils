@@ -34,18 +34,20 @@ enum Operation : int{
 
 };
 
+enum class SamplingMethod{
+    AVG,
+    MAX
+};
+
 template<typename Voxel>
 class DownSamplingOp{
 public:
-    enum SamplingMethod{
-        AVG,
-        MAX
-    };
+
     using ArgT = std::conditional_t<sizeof(Voxel) >= 9, const Voxel&, Voxel>;
     using Func = std::function<Voxel(ArgT, ArgT)>;
     using VoxelDataType = typename Voxel::VoxelDataType;
-    DownSamplingOp( SamplingMethod method = AVG){
-        if(method == AVG){
+    DownSamplingOp( SamplingMethod method = SamplingMethod::AVG){
+        if(method == SamplingMethod::AVG){
             func = [](ArgT a, ArgT b)->Voxel{
                 if constexpr(IsVoxelTypeInteger(Voxel::type)){
                     // unsigned int
@@ -58,7 +60,7 @@ public:
                 }
             };
         }
-        else if(method == MAX){
+        else if(method == SamplingMethod::MAX){
             func = [](ArgT a, ArgT b)->Voxel{
                 return {a.r > b.r ? a.r : b.r};
             };
@@ -85,6 +87,9 @@ public:
     StatisticsOp(){
 
     }
+    StatisticsOp(std::string_view filename){
+
+    }
     ~StatisticsOp(){
 
     }
@@ -95,20 +100,22 @@ public:
 private:
     std::unordered_map<typename Voxel::VoxelDataType,size_t> his;
 };
+enum class MappingOps{
+    ADD,
+    MUL,
+    MIN,
+    MAX,
+    MAP
+};
 
 template<typename Voxel>
 class MappingOp{
 public:
-    enum Ops{
-        ADD,
-        MUL,
-        MIN,
-        MAX,
-        MAP
-    };
+    using ValT = float;
     using ArgT = std::conditional_t<sizeof(Voxel) >= 9, const Voxel&, Voxel>;
+    using VoxelT = typename Voxel::VoxelDataType;
     using Func = std::function<Voxel(ArgT)>;
-
+    using Ops = MappingOps;
     MappingOp()
     {
         func = [](ArgT a)->Voxel{
@@ -132,21 +139,57 @@ public:
         };
         this->func = std::move(f);
     }
-
-    void AddOp(Ops op, ArgT rhs){
-        if(op == ADD)
+    void AddOp(Ops op, ValT rhs){
+        if(op == MappingOps::ADD)
             AddOp_ADD(rhs);
-        else if(op == MUL)
+        else if(op == MappingOps::MUL)
             AddOp_MUL(rhs);
-        else if(op == MAX)
+        else if(op == MappingOps::MAX)
             AddOp_MAX(rhs);
-        else if(op == MIN)
+        else if(op == MappingOps::MIN)
+            AddOp_MIN(rhs);
+    }
+    void AddOp(Ops op, ArgT rhs){
+        if(op == MappingOps::ADD)
+            AddOp_ADD(rhs);
+        else if(op == MappingOps::MUL)
+            AddOp_MUL(rhs);
+        else if(op == MappingOps::MAX)
+            AddOp_MAX(rhs);
+        else if(op == MappingOps::MIN)
             AddOp_MIN(rhs);
     }
     Func GetOp() const{
         return func;
     }
 private:
+    void AddOp_ADD(ValT rhs){
+        Func f = [func = std::move(this->func), rhs](ArgT a)->Voxel{
+            return {VoxelT(func(a).r + rhs)};
+        };
+        this->func = std::move(f);
+    }
+
+    void AddOp_MUL(ValT rhs){
+        Func f = [func = std::move(this->func), rhs](ArgT a)->Voxel{
+            return {VoxelT(func(a).r * rhs)};
+        };
+        this->func = std::move(f);
+    }
+
+    void AddOp_MIN(ValT rhs){
+        Func f = [func = std::move(this->func), rhs](ArgT a)->Voxel{
+            return {std::min<VoxelT>(func(a).r, rhs)};
+        };
+        this->func = std::move(f);
+    }
+
+    void AddOp_MAX(ValT rhs){
+        Func f = [func = std::move(this->func), rhs](ArgT a)->Voxel{
+            return {std::max<VoxelT>(func(a).r, rhs)};
+        };
+        this->func = std::move(f);
+    }
     void AddOp_ADD(ArgT rhs){
         Func f = [func = std::move(this->func), rhs](ArgT a)->Voxel{
             return {func(a).r + rhs.r};
@@ -235,7 +278,8 @@ public:
 
             return *this;
         }
-        std::string output;
+        std::string desc_filename;
+        std::string statistics_filename;
         VolumeType type;
         VolumeDescT desc;
         Operations<Voxel> ops;

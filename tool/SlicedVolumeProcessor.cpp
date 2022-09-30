@@ -66,7 +66,7 @@ public:
             // init writer
             assert(unit.type == VolumeType::Grid_RAW);
 
-            RawGridVolumeWriter writer(unit.output, unit.desc.raw_desc);
+            RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -107,7 +107,7 @@ public:
             // init writer
             assert(unit.type == VolumeType::Grid_SLICED);
 
-            SlicedGridVolumeWriter writer(unit.output, unit.desc.sliced_desc);
+            SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -203,7 +203,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_RAW);
 
-                RawGridVolumeWriter writer(unit.output, unit.desc.raw_desc);
+                RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -234,7 +234,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_SLICED);
 
-                SlicedGridVolumeWriter writer(unit.output, unit.desc.sliced_desc);
+                SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -288,7 +288,7 @@ public:
         unit_mp[VolumeType::Grid_BLOCKED_ENCODED].pop();
         auto oslice_desc = oslice_unit.desc.sliced_desc;
         auto other_ss = std::make_shared<StatisticsOp<Voxel>>();
-        SlicedGridVolumeWriter other_writer(oslice_unit.output, oslice_desc);
+        SlicedGridVolumeWriter other_writer(oslice_unit.desc_filename, oslice_desc);
         typename IOImpl<Voxel>::PackedParams0 packed{
                 .reader = sliced_reader.get(),
                 .range = range,
@@ -408,7 +408,7 @@ public:
         unit_mp[VolumeType::Grid_BLOCKED_ENCODED].pop();
         auto oraw_desc = oraw_unit.desc.sliced_desc;
         auto other_ss = std::make_shared<StatisticsOp<Voxel>>();
-        RawGridVolumeWriter other_writer(oraw_unit.output, oraw_desc);
+        RawGridVolumeWriter other_writer(oraw_unit.desc_filename, oraw_desc);
         typename IOImpl<Voxel>::PackedParams0 packed = {
                 .reader = sliced_reader.get(),
                 .range = range,

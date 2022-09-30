@@ -4,7 +4,7 @@
   "tasks": {
     "task0": {
       "src": {
-        "range": [],
+        "range": [0,0,0,512,512,512],
         "volume_type": "",
         "volume_desc_file": ""
       },
@@ -15,13 +15,17 @@
         "desc": {
 
         },
-        "statistics_filename": "",
+
         "vol_filename": "",
         "operations": {
-          "down_sampling": "max",
+          "down_sampling": "yes",
+          "down_sampling_method": "max",
           "statistics": "yes",
-          "mapping": {
-            "add": 1
+          "statistics_filename": "",
+          "mapping": "yes",
+          "mapping_ops": {
+            "add": 1,
+            "mul": 2
           }
         }
       },
