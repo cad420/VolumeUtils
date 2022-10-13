@@ -1324,7 +1324,7 @@ Register_VoxelVideoCodec(VoxelRU16,CodecDevice::CPU)
 
 class CVolumeCodecInterface{
 public:
-    ~CVolumeCodecInterface() = default;
+    virtual ~CVolumeCodecInterface() = default;
 
     virtual GridVolumeCodec GetCodecType() const noexcept = 0;
 
@@ -1342,7 +1342,7 @@ public:
 template<typename T>
 class VolumeCodecInterface : public CVolumeCodecInterface{
 public:
-    ~VolumeCodecInterface() = default;
+    virtual ~VolumeCodecInterface() = default;
 
     virtual size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) = 0;
 
