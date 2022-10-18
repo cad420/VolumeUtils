@@ -6,7 +6,7 @@ public:
 
 };
 GPUVideoCodec::GPUVideoCodec() {
-
+    _ = std::make_unique<GPUVideoCodecImpl>();
 }
 
 GPUVideoCodec::~GPUVideoCodec() {

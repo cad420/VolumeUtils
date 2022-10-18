@@ -91,11 +91,18 @@ public:
             av_frame_free(&frame);
         pts = 0;
     }
-
+    static void my_log_callback(void *ptr, int level, const char *fmt, va_list vargs)
+    {
+//        vprintf(fmt, vargs);
+    }
     bool InitEncodeContext(const SharedVideoCodecParams& params){
         FreeContext();
-        if(params.fmt == vol::VideoCodecFormat::NONE)
+        av_log_set_level(AV_LOG_QUIET);
+        av_log_set_callback(my_log_callback);
+        if(params.fmt == vol::VideoCodecFormat::NONE){
+            std::cerr << "Invalid format NONE" << std::endl;
             return false;
+        }
         ScopeGuard guard([this]{
             FreeContext();
         });
@@ -155,8 +162,11 @@ public:
 
     bool InitDecodeContext(const SharedVideoCodecParams& params){
         FreeContext();
-        if(params.fmt == vol::VideoCodecFormat::NONE)
+        av_log_set_level(AV_LOG_ERROR);
+        if(params.fmt == vol::VideoCodecFormat::NONE){
+            std::cerr << "Invalid format NONE" << std::endl;
             return false;
+        }
         ScopeGuard guard([this]{
             FreeContext();
         });
@@ -221,7 +231,7 @@ bool FFmpegCodec::Reset(const SharedVideoCodecParams &params) {
 void FFmpegCodec::EncodeFrameIntoPackets(const void *buf, size_t size, Packets &packets) {
     // check context
     assert(_->state == FFmpegCodecPrivate::ENCODE);
-    assert(buf && size);
+//    assert(buf && size);// nullptr for end
 
     // copy buf to frame
     int ret = av_frame_make_writable(_->frame);

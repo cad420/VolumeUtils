@@ -17,7 +17,7 @@ CPUVideoCodec::~CPUVideoCodec() {
 }
 
 bool CPUVideoCodec::ReSet(const VideoCodec::CodecParams &params) {
-    assert(_->codec.IsValid());
+//    assert(_->codec.IsValid());
     SharedVideoCodecParams ret;
     auto ok = TransformToShared(params, CodecDevice::CPU, &ret);
     if(!ok) return false;

@@ -16,6 +16,16 @@ public:
     int type_mask;
     VolumeRange range;
 
+    void Init(){
+        encoded_blocked_reader = std::make_unique<EncodedBlockedGridVolumeReader>(src.desc_filename);
+    }
+
+    void Reset(){
+        encoded_blocked_reader.reset();
+        unit_mp.clear();
+        type_mask = 0;
+        range = {0, 0, 0, 0, 0, 0};
+    }
 
     template<VolumeType type, VolumeType... types>
     void Convert(){
@@ -141,12 +151,14 @@ template<typename Voxel>
 VolumeProcessor<Voxel, VolumeType::Grid_BLOCKED_ENCODED>&
 VolumeProcessor<Voxel, VolumeType::Grid_BLOCKED_ENCODED>::SetSource(const Unit& u, const VolumeRange& range){
     assert(u.type == VolumeType::Grid_BLOCKED_ENCODED);
-    if(!CheckValidation(u.desc.encoded_blocked_desc)){
-        std::cerr << "Invalid source volume desc for encoded blocked volume" << std::endl;
-        return *this;
-    }
+//    if(!CheckValidation(u.desc.encoded_blocked_desc)){
+//        std::cerr << "Invalid source volume desc for encoded blocked volume" << std::endl;
+//        return *this;
+//    }
+    _->Reset();
     _->src = u;
     _->range = range;
+    _->Init();
     return *this;
 }
 
@@ -157,6 +169,7 @@ VolumeProcessor<Voxel, VolumeType::Grid_BLOCKED_ENCODED>::AddTarget(const Unit& 
         std::cerr << "Invalid target volume desc" << std::endl;
         return *this;
     }
+
     _->type_mask |= GetVolumeTypeBits(u.type);
     _->unit_mp[u.type].push(u);
 

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(VolumeUtils)
 
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
+
 file(
         GLOB_RECURSE
         SRCS
@@ -33,11 +36,25 @@ set(
         ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/lib/x64/tiffxxd.lib
 )
 
+set(LIBTIFF_BINS
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/bin/x64/tiff.dll
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/bin/x64/tiffd.dll
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/bin/x64/tiffxx.dll
+        ${PROJECT_SOURCE_DIR}/deps/binary/libtiff/bin/x64/tiffxxd.dll
+        )
+file(COPY ${LIBTIFF_BINS} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
 set(
         FFMPEG_LIBS
         ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/lib/x64/avcodec.lib
         ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/lib/x64/avutil.lib
 )
+
+set(FFMPEG_BINS
+        ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/bin/x64/avcodec-59.dll
+        ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/bin/x64/avutil-57.dll)
+
+file(COPY ${FFMPEG_BINS} DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 target_link_libraries(
         VolumeUtils
@@ -45,6 +62,8 @@ target_link_libraries(
         ${LIBTIFF_LIBS}
         ${FFMPEG_LIBS}
 )
+
+
 
 add_subdirectory(test)
 

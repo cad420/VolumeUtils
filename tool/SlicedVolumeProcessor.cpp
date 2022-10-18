@@ -17,6 +17,16 @@ public:
     int type_mask;
     VolumeRange range;
 
+    void Init(){
+        sliced_reader = std::make_unique<SlicedGridVolumeReader>(src.desc_filename);
+    }
+
+    void Reset(){
+        sliced_reader.reset();
+        unit_mp.clear();
+        type_mask = 0;
+        range = {0, 0, 0, 0, 0, 0};
+    }
 
     size_t CalSliceSize() const{
         return GetVoxelSize(Voxel::type, Voxel::format) * (range.dst_x - range.src_x) * (range.dst_y - range.src_y);
@@ -272,6 +282,10 @@ public:
         IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>({});
     }
 
+    //需要slice数据存储格式支持随机写
+    //一般的tif格式不支持
+    //可以在SlicedGridVolumeIO.cpp里创建新的类以支持其它格式
+    //针对tif这种无法随机写的 也可以有其它算法优化 但是先不写了
     template<>
     void Convert<VolumeType::Grid_SLICED, VolumeType::Grid_BLOCKED_ENCODED>(){
         if(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() > 1
@@ -281,7 +295,10 @@ public:
             return;
         }
         assert(unit_mp[VolumeType::Grid_SLICED].size() == 1 && unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() == 1);
-
+#ifdef SLICE_FILE_NO_RANDOM_ACCESS
+        Convert<VolumeType::Grid_SLICED>();
+        Convert<VolumeType::Grid_BLOCKED_ENCODED>();
+#else
         auto oslice_unit = unit_mp[VolumeType::Grid_SLICED].front();
         unit_mp[VolumeType::Grid_SLICED].pop();
         auto oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
@@ -302,94 +319,7 @@ public:
                 .other_ss_func = other_ss
         };
         IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>({});
-        /*
-        auto& oslice_unit = unit_mp[VolumeType::Grid_SLICED].front();
-        auto oslice_desc = oslice_unit.desc.sliced_desc;
-        auto& oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
-        {
-            // down sampling for encoded blocked volume will not have impact
-            if(oblocked_encoded_unit.ops.op_mask & DownSampling){
-                std::cerr << "down sampling for encoded blocked volume will not have impact" << std::endl;
-            }
-        }
-
-        auto& oblocked_encoded_desc = oblocked_encoded_unit.desc.encoded_blocked_desc;
-        uint32_t block_length = oblocked_encoded_desc.block_length;
-        assert(block_length % 2 == 0);
-        uint32_t padding = oblocked_encoded_desc.padding;
-        uint32_t block_size = block_length + 2 * padding;
-        uint32_t read_x_size = range.dst_x - range.src_x;
-        uint32_t read_y_size = range.dst_y - range.src_y;
-        uint32_t read_z_size = range.dst_z - range.src_z;
-        Extend3D grid_extend{read_x_size, block_size, block_size};
-        RawGridVolume<Voxel> grid(RawGridVolumeDesc{.extend = grid_extend});
-        RawGridVolume<Voxel> block(RawGridVolumeDesc{.extend = {block_size, block_size, block_size}});
-        // note read pos base on block_length but read region should base on block_size
-        int y_read_count = (read_y_size + block_length - 1) / block_length;
-        int z_read_count = (read_z_size + block_length - 1) / block_length;
-        int x_block_count = (read_x_size + block_length - 1) / block_length;
-
-        EncodedBlockedGridVolumeWriter encoded_blocked_writer(oblocked_encoded_unit.output, oblocked_encoded_desc);
-        SlicedGridVolumeWriter sliced_writer(oslice_unit.output, oslice_desc);
-
-        bool slice_has_ds = oslice_unit.ops.op_mask & DownSampling;
-        bool slice_has_mp = oslice_unit.ops.op_mask & Mapping;
-        bool slice_has_ss = oslice_unit.ops.op_mask & Statistics;
-        auto slice_mapping_func = oslice_unit.ops.mapping.GetOp();
-        auto slice_ds_func = oslice_unit.ops.down_sampling.GetOp();
-        StatisticsOp<Voxel> slice_ss;
-        auto eb_mapping_func = oblocked_encoded_unit.ops.mapping.GetOp();
-        StatisticsOp<Voxel> eb_ss;
-        for(int y_turn = 0; y_turn < y_read_count; y_turn++){
-            for(int z_turn = 0; z_turn < z_read_count; z_turn++){
-                sliced_reader->ReadVolumeData(range.src_x - padding,
-                                              range.src_y + y_turn * block_length - padding,
-                                              range.src_z + z_turn * block_length - padding,
-                                              range.dst_x + padding,
-                                              range.dst_y + (y_turn + 1) * block_length + padding,
-                                              range.dst_z + (z_turn + 1) * block_length + padding,
-                                              grid.GetRawDataPtr(), grid_extend.size() * sizeof(Voxel));
-                // write grid's blocks into file
-                for(int x_turn = 0; x_turn < x_block_count; x_turn++){
-                    encoded_blocked_writer.WriteBlockData({x_turn, y_turn, z_turn},
-                                                          [&](int dx, int dy, int dz, void* dst, size_t ele_size){
-                        auto p = reinterpret_cast<Voxel*>(dst);
-                        *p = eb_mapping_func(grid(x_turn * block_length - padding + dx,
-                                  y_turn * block_length - padding + dy,
-                                  z_turn * block_length - padding + dz));
-                        eb_ss.AddVoxel(*p);
-                    });
-                }
-                // write grid to slices
-                if(!slice_has_ds){
-                    sliced_writer.WriteVolumeData(0, y_turn * block_length, z_turn * block_length,
-                                                  read_x_size, (y_turn + 1) * block_length, (z_turn + 1) * block_length,
-                                                  [&](int dx, int dy, int dz, void* dst, size_t ele_size){
-                        auto p = reinterpret_cast<Voxel*>(dst);
-                        *p = slice_mapping_func(grid(dx, y_turn * block_length + dy, z_turn * block_length + dz));
-                        slice_ss.AddVoxel(*p);
-                    });
-                }
-                else{
-                    sliced_writer.WriteVolumeData(0, y_turn * block_length / 2, z_turn * block_length / 2,
-                                                  (read_x_size + 1) / 2,// x y z out of slice region will be handled by WriteVolumeData
-                                                  (y_turn + 1) * block_length / 2,
-                                                  (z_turn + 1) * block_length / 2,
-                                                  [&, beg_x = 0, beg_y = y_turn * block_length / 2, beg_z = z_turn * block_length / 2]
-                                                  (int dx, int dy, int dz, void* dst, size_t ele_size){
-                        auto p = reinterpret_cast<Voxel*>(dst);
-                        int x = 2 * (beg_x + dx), y = 2 * (beg_y + dy), z = 2 * (beg_z + dz);
-                        *p = slice_mapping_func(slice_ds_func(
-                        slice_ds_func(slice_ds_func(grid(x, y, z), grid(x + 1, y, z)),
-                        slice_ds_func(grid(x, y + 1, z), grid(x + 1, y + 1, z))),
-                        slice_ds_func(slice_ds_func(grid(x, y, z + 1), grid(x + 1, y, z + 1)),
-                        slice_ds_func(grid(x, y + 1, z + 1), grid(x + 1, y + 1, z + 1)))));
-                        slice_ss.AddVoxel(*p);
-                    });
-                }
-            }
-        }
-        */
+#endif
     }
 
     template<>
@@ -456,12 +386,14 @@ VolumeProcessor<Voxel, VolumeType::Grid_SLICED>::~VolumeProcessor() {
 template<typename Voxel>
 VolumeProcessor<Voxel, VolumeType::Grid_SLICED>& VolumeProcessor<Voxel, VolumeType::Grid_SLICED>::SetSource(const Unit& u, const VolumeRange& range){
     assert(u.type == VolumeType::Grid_SLICED);
-    if(!CheckValidation(u.desc.sliced_desc)){
-        std::cerr << "Invalid source volume desc" << std::endl;
-        return *this;
-    }
+//    if(!CheckValidation(u.desc.sliced_desc)){
+//        std::cerr << "Invalid source volume desc" << std::endl;
+//        return *this;
+//    }
+    _->Reset();
     _->src = u;
     _->range = range;
+    _->Init();
     return *this;
 }
 

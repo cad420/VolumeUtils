@@ -3,11 +3,33 @@
 #include <cmdline.hpp>
 #include <json.hpp>
 #include <fstream>
+
+extern size_t GetAvailMemSize();
+
+//todo logger to file
+
 namespace{
 
     struct Process {
+        inline static const char* sliced           = "sliced";
+        inline static const char* slice_format     = "slice_format";
+        inline static const char* volume_name      = "volume_name";
+        inline static const char* voxel_type       = "voxel_type";
+        inline static const char* voxel_format     = "voxel_format";
+        inline static const char* extend           = "extend";
+        inline static const char* space            = "space";
+        inline static const char* axis             = "axis";
+        inline static const char* prefix           = "prefix";
+        inline static const char* postfix          = "postfix";
+        inline static const char* setw             = "setw";
+        inline static const char* block_length     = "block_length";
+        inline static const char* padding          = "padding";
+        inline static const char* volume_codec     = "volume_codec";
+        inline static const char* data_path        = "data_path";
+        inline static const char* volume_desc_file = "volume_desc_file";
 
         static VolumeType StrToVolumeType(std::string_view str){
+            // todo change to const var
             if(str == "raw")
                 return vol::VolumeType::Grid_RAW;
             else if(str == "sliced")
@@ -23,7 +45,8 @@ namespace{
             struct SrcNode {
                 VolumeRange range;
                 VolumeType volume_type;
-                VolumeDescT desc;
+                std::string volume_desc_file;
+                VoxelInfo voxel_info;
             };
 
             struct DstNode {
@@ -58,49 +81,89 @@ namespace{
         template<>
         struct Desc<vol::VolumeType::Grid_RAW>{
             template<typename Json>
-            static VolumeDescT Get(Json& j){
-                VolumeDescT desc;
-                desc.raw_desc.volume_name = "";
-
-
-                return desc;
+            static void Get(Json& raw, RawGridVolumeDesc& desc){
+                std::string name = raw.at(volume_name);
+                desc.volume_name = raw.count(volume_name) == 0 ? "none" : std::string(raw.at(volume_name));
+                desc.voxel_info.type = StrToVoxelType(raw.count(voxel_type) == 0 ? "unknown" : raw.at(voxel_type));
+                desc.voxel_info.format = StrToVoxelFormat(raw.count(voxel_format) == 0 ? "none" : raw.at(voxel_format));
+                if(raw.count(extend) != 0){
+                    std::array<int, 3> shape = raw.at(extend);
+                    desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
+                }
+                if(raw.count(space) != 0){
+                    std::array<float, 3> sp = raw.at(space);
+                    desc.space = {sp[0], sp[1], sp[2]};
+                }
+                desc.data_path = raw.at(data_path);
             }
         };
 
         template<>
         struct Desc<vol::VolumeType::Grid_SLICED>{
             template<typename Json>
-            static VolumeDescT Get(Json& j){
-                VolumeDescT desc;
-                desc.sliced_desc.volume_name = "";
-
-
-                return desc;
+            static void Get(Json& slice, SlicedGridVolumeDesc& desc){
+                desc.volume_name = slice.count(volume_name) == 0 ? "none" : std::string(slice.at(volume_name));
+                desc.voxel_info.type = StrToVoxelType(slice.count(voxel_type) == 0 ? "unknown" : slice.at(voxel_type));
+                desc.voxel_info.format = StrToVoxelFormat(slice.count(voxel_format) == 0 ? "none" : slice.at(voxel_format));
+                if(slice.count(extend) != 0){
+                    std::array<int, 3> shape = slice.at(extend);
+                    desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
+                }
+                if(slice.count(space) != 0){
+                    std::array<float, 3> sp = slice.at(space);
+                    desc.space = {sp[0], sp[1], sp[2]};
+                }
+                desc.axis = slice.count(axis) == 0 ? SliceAxis::AXIS_Z : static_cast<SliceAxis>(slice.at(axis));
+                desc.prefix = slice.count(prefix) == 0 ? "" : slice.at(prefix);
+                desc.postfix = slice.count(postfix) == 0 ? "" : slice.at(postfix);
+                desc.setw = slice.count(setw) == 0 ? 0 : (int)slice.at(setw);
             }
         };
 
         template<>
         struct Desc<vol::VolumeType::Grid_BLOCKED_ENCODED>{
             template<typename Json>
-            static VolumeDescT Get(Json& j){
-                VolumeDescT desc;
-                desc.blocked_desc.volume_name = "";
-
-
-                return desc;
+            static void Get(Json& eb, EncodedBlockedGridVolumeDesc& desc){
+                desc.volume_name = eb.count(volume_name) == 0 ? "none" : std::string(eb.at(volume_name));
+                desc.voxel_info.type = StrToVoxelType(eb.count(voxel_type) == 0 ? "unknown" : eb.at(voxel_type));
+                desc.voxel_info.format = StrToVoxelFormat(eb.count(voxel_format) == 0 ? "none" : eb.at(voxel_format));
+                if(eb.count(extend) != 0){
+                    std::array<int, 3> shape = eb.at(extend);
+                    desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
+                }
+                if(eb.count(space) != 0){
+                    std::array<float, 3> sp = eb.at(space);
+                    desc.space = {sp[0], sp[1], sp[2]};
+                }
+                desc.block_length = eb.at(block_length);
+                desc.padding = eb.at(padding);
+                desc.codec = StrToGridVolumeDataCodec(eb.at(volume_codec));
+                desc.data_path = eb.at(data_path);
             }
         };
 
         template<typename Json>
-        static VolumeDescT GetDesc(VolumeType type, Json& j){
+        static void GetDesc(VolumeType type, Json& j, VolumeDescT& desc){
             if(type == vol::VolumeType::Grid_RAW)
-                return Desc<vol::VolumeType::Grid_RAW>::Get(j);
+                Desc<vol::VolumeType::Grid_RAW>::Get(j, desc.raw_desc);
             else if(type == vol::VolumeType::Grid_SLICED)
-                return Desc<vol::VolumeType::Grid_SLICED>::Get(j);
+                Desc<vol::VolumeType::Grid_SLICED>::Get(j, desc.sliced_desc);
             else if(type == vol::VolumeType::Grid_BLOCKED_ENCODED)
-                return Desc<vol::VolumeType::Grid_BLOCKED_ENCODED>::Get(j);
+                Desc<vol::VolumeType::Grid_BLOCKED_ENCODED>::Get(j, desc.encoded_blocked_desc);
             else
                 assert(false);
+        }
+
+
+        static void GetDescFromFile(VolumeType type, const std::string& filename, VolumeDescT& desc){
+            std::ifstream in(filename);
+            if(!in.is_open()){
+                throw std::runtime_error("Failed to open desc json file : " + filename);
+            }
+            nlohmann::json j;
+            in >> j;
+
+            GetDesc(type, j.at("desc"), desc);
         }
 
         static SamplingMethod StrToSamplingMethod(std::string_view str){
@@ -132,14 +195,25 @@ namespace{
                 errorCallback((std::string("Can't open file: ") + filename).c_str());
                 return nullptr;
             }
-            nlohmann::json j;
-            in >> j;
+            // warning
+            if(filename.substr(filename.length() - 13) != ".process.json"){
+                std::cerr << "Warning: filename not end with .process.json, this may not be config file." << std::endl;
+            }
+
+            std::stringstream ss;
+            ss << in.rdbuf();
+
+            return CreateFromString(ss.str(), std::move(errorCallback));
+        }
+
+        static std::unique_ptr<Process> CreateFromString(const std::string& context, std::function<void(const char*)> errorCallback){
+            nlohmann::json j = nlohmann::json::parse(context);
 
             auto process = std::make_unique<Process>();
             auto& tasks = j.at("tasks");
             int task_count = j.at("task_count");
 
-            process->memory_limit_gb = j.at("memory_limit_gb");
+            process->memory_limit_gb = std::min<int>(GetAvailMemSize() >> 30, j.at("memory_limit_gb"));
 
             for(int i = 0; i < task_count; i++){
                 auto& task_node = process->tasks.emplace_back();
@@ -150,8 +224,9 @@ namespace{
                 std::array<int, 6> range = src.at("range");
                 task_node.src.range = {range[0], range[1], range[2], range[3], range[4], range[5]};
                 task_node.src.volume_type = StrToVolumeType(src.at("volume_type"));
-                task_node.src.desc = GetDesc(task_node.src.volume_type, src.at("desc"));
-
+                task_node.src.volume_desc_file = src.at(volume_desc_file);
+                task_node.src.voxel_info.type = StrToVoxelType(src.at(voxel_type));
+                task_node.src.voxel_info.format = StrToVoxelFormat(src.at(voxel_format));
 
                 int dst_count = task.at("dst_count");
                 for(int k = 0; k < dst_count; k++){
@@ -160,7 +235,8 @@ namespace{
                     auto& dst_node = task_node.dst.emplace_back();
                     dst_node.desc_filename = dst.at("desc_filename");
                     dst_node.volume_type = StrToVolumeType(dst.at("volume_type"));
-                    dst_node.desc = GetDesc(dst_node.volume_type, dst.at("desc"));
+                    dst_node.desc.Set(dst_node.volume_type);
+                    GetDesc(dst_node.volume_type, dst.at("desc"),  dst_node.desc);
 
                     dst_node.vol_filename = dst.at("vol_filename");
 
@@ -184,12 +260,7 @@ namespace{
             }
 
 
-            return process;
-        }
-
-        static std::unique_ptr<Process> CreateFromString(const std::string& context, std::function<void(const char*)> errorCallback){
-            errorCallback("CreateFromString not imply now");
-            return nullptr;
+            return std::move(process);
         }
 
         int memory_limit_gb = 0;
@@ -201,72 +272,69 @@ namespace{
 
 
 template<typename Voxel>
-void Run(const std::vector<std::unique_ptr<Processor<Voxel>>>& processors){
+void Run(std::unique_ptr<Processor<Voxel>> processor){
     try{
-        for(auto& processor : processors){
-            processor->Convert();
-        }
+        processor->Convert();
     }
     catch (const std::exception& err) {
         std::cerr << err.what() << std::endl;
     }
 }
 
-
 template<typename Voxel, VolumeType type>
-void Parse(std::unique_ptr<Process> process){
-    std::vector<std::unique_ptr<Processor<Voxel>>> processors;
-
-    for(auto& task : process->tasks){
-        auto& processor = processors.emplace_back(std::make_unique<VolumeProcessor<Voxel,type>>());
-        // set source
-        auto src_unit = typename Processor<Voxel>::Unit();
-        src_unit.type = task.src.volume_type, src_unit.desc = task.src.desc;
-        processor->SetSource(src_unit, task.src.range);
-        // set target
-        for(auto& dst : task.dst){
-            auto dst_unit = typename Processor<Voxel>::Unit();
-            dst_unit.desc_filename = dst.desc_filename;
-            dst_unit.type = dst.volume_type;
-            dst_unit.desc = dst.desc;
-            if(dst.op.down_sampling){
-                dst_unit.ops.AddDownSampling(DownSamplingOp<Voxel>(dst.op.down_sampling_method));
-            }
-            if(dst.op.statistics){
-                dst_unit.ops.AddStatistics(StatisticsOp<Voxel>(dst.op.statistics_filename));
-            }
-            if(dst.op.mapping){
-                MappingOp<Voxel> mapping_op;
-                for(auto& mapping : dst.op.mapping_ops){
-                    mapping_op.AddOp(mapping.mapping_op, mapping.val);
-                }
-                dst_unit.ops.AddMapping(std::move(mapping_op));
-            }
+void Parse(const Process::TaskNode& task){
+    std::unique_ptr<Processor<Voxel>> processor = std::make_unique<VolumeProcessor<Voxel, type>>();
+    // set source
+    auto src_unit = typename Processor<Voxel>::Unit();
+    src_unit.type = task.src.volume_type;
+    src_unit.desc_filename = task.src.volume_desc_file;
+    processor->SetSource(src_unit, task.src.range);
+    // set target
+    for(auto& dst : task.dst){
+        auto dst_unit = typename Processor<Voxel>::Unit();
+        dst_unit.desc_filename = dst.desc_filename;
+        dst_unit.type = dst.volume_type;
+        dst_unit.desc.Set(dst.volume_type, dst.desc);
+        if(dst.op.down_sampling){
+            dst_unit.ops.AddDownSampling(DownSamplingOp<Voxel>(dst.op.down_sampling_method));
         }
+        if(dst.op.statistics){
+            dst_unit.ops.AddStatistics(StatisticsOp<Voxel>(dst.op.statistics_filename));
+        }
+        if(dst.op.mapping){
+            MappingOp<Voxel> mapping_op;
+            for(auto& mapping : dst.op.mapping_ops){
+                mapping_op.AddOp(mapping.mapping_op, mapping.val);
+            }
+            dst_unit.ops.AddMapping(std::move(mapping_op));
+        }
+        processor->AddTarget(dst_unit);
     }
 
-    Run(processors);
+    Run(std::move(processor));
 }
 
-void Parse(std::unique_ptr<Process> process){
 
-    VoxelInfo voxel_info;
-    VolumeType type;
-    if(voxel_info.type == vol::VoxelType::uint8 && voxel_info.format == VoxelFormat::R){
-        if(type == vol::VolumeType::Grid_RAW)
-            Parse<VoxelRU8, vol::VolumeType::Grid_RAW>(std::move(process));
-        else if(type == vol::VolumeType::Grid_SLICED)
-            Parse<VoxelRU8, vol::VolumeType::Grid_SLICED>(std::move(process));
-        else if(type == vol::VolumeType::Grid_BLOCKED_ENCODED)
-            Parse<VoxelRU8, vol::VolumeType::Grid_BLOCKED_ENCODED>(std::move(process));
-    }
-    else if(voxel_info.type == vol::VoxelType::uint16 && voxel_info.format == vol::VoxelFormat::R){
-        if(type == vol::VolumeType::Grid_RAW)
-            Parse<VoxelRU16, vol::VolumeType::Grid_RAW>(std::move(process));
-        else if(type == vol::VolumeType::Grid_SLICED)
-            Parse<VoxelRU16, vol::VolumeType::Grid_SLICED>(std::move(process));
-        else if(type == vol::VolumeType::Grid_BLOCKED_ENCODED)
-            Parse<VoxelRU16, vol::VolumeType::Grid_BLOCKED_ENCODED>(std::move(process));
+void Parse(std::unique_ptr<Process> process){
+    if(process->tasks.empty()) return;
+    for(auto& task : process->tasks){
+        VoxelInfo voxel_info = task.src.voxel_info;
+        VolumeType type = task.src.volume_type;
+        if (voxel_info.type == vol::VoxelType::uint8 && voxel_info.format == VoxelFormat::R) {
+            if (type == vol::VolumeType::Grid_RAW)
+                Parse<VoxelRU8, vol::VolumeType::Grid_RAW>(task);
+            else if (type == vol::VolumeType::Grid_SLICED)
+                Parse<VoxelRU8, vol::VolumeType::Grid_SLICED>(task);
+            else if (type == vol::VolumeType::Grid_BLOCKED_ENCODED)
+                Parse<VoxelRU8, vol::VolumeType::Grid_BLOCKED_ENCODED>(task);
+        } else if (voxel_info.type == vol::VoxelType::uint16 && voxel_info.format == vol::VoxelFormat::R) {
+            if (type == vol::VolumeType::Grid_RAW)
+                Parse<VoxelRU16, vol::VolumeType::Grid_RAW>(task);
+            else if (type == vol::VolumeType::Grid_SLICED)
+                Parse<VoxelRU16, vol::VolumeType::Grid_SLICED>(task);
+            else if (type == vol::VolumeType::Grid_BLOCKED_ENCODED)
+                Parse<VoxelRU16, vol::VolumeType::Grid_BLOCKED_ENCODED>(task);
+        }
     }
 
 }
@@ -284,21 +352,25 @@ void ParseFromFile(const std::string& filename){
 }
 
 void PrintConfigFileFormat(){
-
+    std::cerr << "TODO..." << std::endl;
 }
 
 int main(int argc, char** argv){
     try{
         cmdline::parser cmd;
-        cmd.add("config", 'c', "config json filename");
+        cmd.add<std::string>("config", 'c', "config json filename");
         cmd.add("print", 'p', "print config file format");
 
         cmd.parse_check(argc, argv);
 
-        bool print = cmd.get<bool>("print");
+        bool print = cmd.exist("print");
         if (print) {
             PrintConfigFileFormat();
             return 0;
+        }
+
+        if(!cmd.exist("config")){
+            throw std::runtime_error(cmd.usage().c_str());
         }
         auto filename = cmd.get<std::string>("config");
         ParseFromFile(filename);

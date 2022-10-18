@@ -14,6 +14,6 @@
     "block_length" : 254,
     "padding" : 1,
     "volume_codec" : "video",
-    "data_path": ""
+    "data_path": "genfoot_4p1_max_lod0_256_256_256_uint8.ebd"
   }
 }

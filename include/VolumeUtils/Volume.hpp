@@ -9,6 +9,14 @@
 #else
 #define VOL_WHEN_DEBUG(op) do{}while(false);
 #endif
+
+// OS
+#if defined(_WIN32)
+#define VOL_OS_WIN32
+#elif defined(__linux)
+#define VOL_OS_LINUX
+#endif
+
 // CXX
 #if defined(_MSC_VER)
 #define VOL_CXX_MSVC
@@ -20,7 +28,9 @@
 #define VOL_CXX_IS_GNU
 #endif
 
+#define NOT_IMPL { std::cerr << "ERROR : Not Imply!!!" << std::endl; assert(false); }
 
+#include <iostream>
 #include <string>
 #include <functional>
 #include <vector>
@@ -330,26 +340,32 @@ public:
 
 class CVolumeInterface{
 public:
-
+    virtual ~CVolumeInterface() = default;
 };
 
+template<typename Voxel>
+using TVolumeReadFunc = std::function<size_t(int dx, int dy, int dz, const Voxel& dst)>;
+template<typename Voxel>
+using TVolumeWriteFunc = std::function<void(int dx, int dy, int dz, Voxel& dst)>;
 /**
  * @brief Memory model for volume.
  */
 template<typename Voxel>
 class VolumeInterface : public CVolumeInterface{
 public:
+
+
     /**
      * @note Invalid params will not throw any exceptions and will just return 0.
      * @return The number of voxels which are read successfully.
      */
     virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept = 0;
 
-    virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, std::function<Voxel(const Voxel&)> mapper) noexcept = 0;
+    virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept = 0;
 
     virtual size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept = 0;
 
-    virtual size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, std::function<Voxel(const Voxel&)> mapper) noexcept = 0;
+    virtual size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept = 0;
 
     virtual Voxel& operator()(int x, int y, int z) = 0;
 
@@ -439,13 +455,17 @@ public:
     ~RawGridVolume();
 
 public:
+    /**
+     * @param size voxel expected read count for buf.
+     * @return exactly voxel read count.
+     */
     size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept override;
 
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, std::function<Voxel(const Voxel&)> mapper) noexcept override;
+    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept override;
 
     size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept override;
 
-    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, std::function<Voxel(const Voxel&)> mapper) noexcept override;
+    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept override;
 
     Voxel& operator()(int x,int y,int z) override;
 
@@ -456,15 +476,15 @@ public:
     // help functions
     template<typename F>
     SelfT Map(F&& f) const noexcept{
-
+        NOT_IMPL
     }
 
     template<typename F>
     void MapInplace(F&& f) noexcept{
-
+        NOT_IMPL
     }
 
-    const RawGridVolumeDesc &GetVolumeDesc() const;
+    const RawGridVolumeDesc& GetVolumeDesc() const;
 
 public:
     Voxel* GetRawDataPtr() noexcept;
@@ -489,13 +509,15 @@ public:
     explicit RawGridVolumeReader(const std::string& filename);
 
     ~RawGridVolumeReader();
+
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
 
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
 
     const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
-private:
+
+protected:
     std::unique_ptr<RawGridVolumeReaderPrivate> _;
 };
 
@@ -505,13 +527,15 @@ public:
     explicit RawGridVolumeWriter(const std::string& filename, const RawGridVolumeDesc& desc);
 
     ~RawGridVolumeWriter();
+
 public:
     const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
 
     void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
-private:
+
+protected:
     std::unique_ptr<RawGridVolumeWriterPrivate> _;
 };
 
@@ -522,15 +546,15 @@ enum class SliceAxis : int {
 
 struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     SliceAxis axis = SliceAxis::AXIS_Z;
-    std::function<std::string(uint32_t)> name_generator;
+    mutable std::function<std::string(uint32_t)> name_generator;
     std::string prefix;
     std::string postfix;
     int setw = 0;
-
-    void Generate() noexcept{
+    bool overwrite = true;
+    void Generate() const noexcept {
         name_generator = [this](uint32_t idx){
             std::stringstream ss;
-            ss << prefix << std::setw(setw) << std::to_string(idx) << postfix;
+            ss << prefix << std::setw(setw) << std::setfill('0') << std::to_string(idx) << postfix;
             return ss.str();
         };
     }
@@ -551,10 +575,35 @@ class SlicedGridVolumePrivate;
 template<typename Voxel>
 class SlicedGridVolume :public RawGridVolume<Voxel>{
 public:
-    size_t ReadSlice(SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
-    size_t ReadSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
-    size_t WriteSlice(SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
-    size_t WriteSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
+    using VoxelT = Voxel;
+    using SelfT = RawGridVolume<Voxel>;
+    static constexpr VolumeType EVolumeType = VolumeType::Grid_SLICED;
+
+    explicit SlicedGridVolume(const SlicedGridVolumeDesc& desc);
+
+    ~SlicedGridVolume();
+
+public:
+    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept override;
+
+    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept override;
+
+    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept override;
+
+    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept override;
+
+    Voxel& operator()(int x, int y, int z) override;
+
+    const Voxel& operator()(int x, int y, int z) const override;
+
+public:
+    virtual size_t ReadSlice(SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
+
+    virtual size_t ReadSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
+
+    virtual size_t WriteSlice(SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
+
+    virtual size_t WriteSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
 
 protected:
     std::unique_ptr<SlicedGridVolumePrivate> _;
@@ -655,34 +704,56 @@ struct BlockedGridVolumeDesc : RawGridVolumeDesc{
     uint32_t padding;
 };
 
+/**
+ * @note This class not implied and not used.
+ */
+class BlockedGridVolumePrivate;
 template <typename Voxel>
 class BlockedGridVolume:public RawGridVolume<Voxel>{
 public:
     using VoxelT = typename RawGridVolume<Voxel>::VoxelT;
 
-    BlockedGridVolume(const BlockedGridVolumeDesc&,const std::string&);
+    BlockedGridVolume(const BlockedGridVolumeDesc& desc);
 
-    virtual void ReadBlockData(const BlockIndex&, VoxelT* buf);
+    void ReadBlockData(const BlockIndex&, VoxelT* buf);
 
     Voxel* GetRawBlockData(const BlockIndex&) noexcept;
+
     const Voxel* GetRawBlockData(const BlockIndex&) const noexcept;
+
+protected:
+    std::unique_ptr<BlockedGridVolumePrivate> _;
 };
 
+/**
+ * @note This class not implied and not used.
+ */
 class BlockedGridVolumeReaderPrivate;
 class BlockedGridVolumeReader : public VolumeReaderInterface<BlockedGridVolumeDesc>{
 public:
+    explicit BlockedGridVolumeReader(const std::string& filename);
+
+    ~BlockedGridVolumeReader();
+
+public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+
     const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
 public:
     size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
+
     size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
 
-private:
+protected:
     std::unique_ptr<BlockedGridVolumeReaderPrivate> _;
 };
 
-
+/**
+ * @note This class not implied and not used.
+ */
 class BlockedGridVolumeWriterPrivate;
 class BlockedGridVolumeWriter : public VolumeWriterInterface<BlockedGridVolumeDesc>{
 public:
@@ -702,7 +773,7 @@ public:
 
     void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
 
-private:
+protected:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
 };
 
@@ -721,30 +792,46 @@ using DecodeWorker = std::function<size_t(const Packets&, void*)>;
 
 struct EncodedGridVolumeDesc : RawGridVolumeDesc{
     GridVolumeCodec codec;
-    VoxelInfo voxel;
 };
 
+/**
+ * @note This class not implied and not used.
+ */
 template <typename Voxel>
 class EncodedGridVolume : public RawGridVolume<Voxel>{
 public:
 
 };
 
+/**
+ * @note This class not implied and not used.
+ */
 class EncodedGridVolumeReaderPrivate;
 class EncodedGridVolumeReader : public VolumeReaderInterface<EncodedGridVolumeDesc>{
 public:
-    // select cpu or gpu...
+    explicit EncodedGridVolumeReader(const std::string& filename);
+
+    ~EncodedGridVolumeReader();
+
 public:
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+
     size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+
     const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+
 public:
     size_t ReadEncodedData(void* buf, size_t size) noexcept;
+
     size_t ReadEncodedData(Packets& packets) noexcept;
-private:
+
+protected:
     std::unique_ptr<EncodedGridVolumeReaderPrivate> _;
 };
 
+/**
+ * @note This class not implied and not used.
+ */
 class EncodedGridVolumeWriterPrivate;
 class EncodedGridVolumeWriter : public VolumeWriterInterface<EncodedGridVolumeDesc>{
 public:
@@ -764,18 +851,14 @@ public:
 
     void WriteEncodedData(const Packets& packets) noexcept;
 
-private:
+protected:
     std::unique_ptr<EncodedGridVolumeWriterPrivate> _;
 };
 
-//todo virtual derived?
 struct EncodedBlockedGridVolumeDesc : BlockedGridVolumeDesc{
     GridVolumeCodec codec;
-    char preserve[20];
-};//64
-
-//inline constexpr int EncodedBlockedGridVolumeDescSize = 64;
-//static_assert(sizeof(EncodedBlockedGridVolumeDesc) == EncodedBlockedGridVolumeDescSize,"");
+    char preserve[32];
+};
 
 inline bool CheckValidation(const EncodedBlockedGridVolumeDesc& desc){
     if(desc.block_length == 0 || desc.padding == 0 || desc.block_length <= (desc.padding << 1)){
@@ -787,10 +870,21 @@ inline bool CheckValidation(const EncodedBlockedGridVolumeDesc& desc){
     return true;
 }
 
+/**
+ * @note This class not implied and not used.
+ */
+class EncodedBlockedGridVolumePrivate;
 template<typename Voxel>
 class EncodedBlockedGridVolume: public BlockedGridVolume<Voxel>{
 public:
-    EncodedBlockedGridVolume(const EncodedBlockedGridVolumeDesc& desc, const std::string& filename);
+    explicit EncodedBlockedGridVolume(const EncodedBlockedGridVolumeDesc& desc);
+
+    ~EncodedBlockedGridVolume();
+
+public:
+
+protected:
+    std::unique_ptr<EncodedBlockedGridVolumePrivate> _;
 };
 
 
@@ -868,435 +962,6 @@ private:
     std::unique_ptr<EncodedBlockedGridVolumeWriterPrivate> _;
 };
 
-template<typename,bool>
-class GridDataView;
-
-template<typename, bool>
-class SliceDataView;
-
-template<typename T>
-class SliceData{
-public:
-    SliceData(uint32_t sizeX, uint32_t sizeY, const T& init = T{})
-    :sizeX(sizeX),sizeY(sizeY)
-    {
-        size_t count = (size_t)sizeX * sizeY;
-        assert(count);
-        data = static_cast<T*>(std::malloc(sizeof(T) * count));
-        for(size_t i = 0; i < count; i++)
-            data[i] = init;
-    }
-
-    SliceData(uint32_t sizeX, uint32_t sizeY, const T* srcP)
-    :sizeX(sizeX), sizeY(sizeY)
-    {
-        size_t count = (size_t)sizeX * sizeY;
-        assert(count);
-        data = static_cast<T*>(std::malloc(sizeof(T) * count));
-        std::memcpy(data, srcP, sizeof(T) * count);
-    }
-
-    ~SliceData(){
-        if(data){
-            free(data);
-        }
-    }
-
-    const T& At(uint32_t x, uint32_t y) const{
-        if(x >= sizeX || y >= sizeY){
-            throw std::out_of_range("SliceData At out of range");
-        }
-        return this->operator()(x, y);
-    }
-
-    T& At(uint32_t x, uint32_t y){
-        if(x >= sizeX || y >= sizeY){
-            throw std::runtime_error("SliceData At out of range");
-        }
-        return this->operator()(x, y);
-    }
-
-    T& operator()(uint32_t x, uint32_t y) {
-        return data[(size_t)y * sizeX + x];
-    }
-
-    const T& operator()(uint32_t x, uint32_t y) const {
-        return data[(size_t)y * sizeX + x];
-    }
-
-    SliceDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy);
-
-    SliceDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const;
-
-    SliceDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const;
-
-    auto Width() const{
-        return sizeX;
-    }
-
-    auto Height() const{
-        return sizeY;
-    }
-
-    size_t Size() const{
-        return (size_t)sizeX * sizeY;
-    }
-
-    T* GetRawPtr(){
-        return data;
-    }
-
-    const T* GetRawPtr() const {
-        return data;
-    }
-
-private:
-    T* data;
-    uint32_t sizeX;
-    uint32_t sizeY;
-};
-
-template<typename T, bool CONST = false>
-class SliceDataView {
-
-    using DataT = std::conditional_t<CONST, const SliceData<T>*, SliceData<T>*>;
-
-public:
-    SliceDataView(uint32_t oriX, uint32_t oriY, uint32_t sizeX, uint32_t sizeY, DataT srcP)
-    :oriX(oriX), oriY(oriY), sizeX(sizeX), sizeY(sizeY), data(srcP)
-    {
-
-    }
-
-    T& operator()(uint32_t x, uint32_t y){
-        return data->operator()(oriX + x, oriY + y);
-    }
-
-    const T& operator()(uint32_t x, uint32_t y) const {
-        return data->operator()(x, y);
-    }
-
-    const T& At(uint32_t x,uint32_t y) const{
-        if(x >= sizeX || y >= sizeY){
-            throw std::runtime_error("SliceDataView At out of range");
-        }
-        return this->operator()(x, y);
-    }
-
-    T& At(uint32_t x,uint32_t y){
-        if(x >= sizeX || y >= sizeY){
-            throw std::runtime_error("SliceDataView At out of range");
-        }
-        return this->operator()(x, y);
-    }
-
-    SliceDataView GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy){
-        return SliceDataView(oriX + ox, oriY + oy, sx, sy, data);
-    }
-    SliceDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
-        return SliceDataView<T,true>(oriX + ox, oriY + oy, sx, sy, data);
-    }
-    SliceDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
-        return SliceDataView<T,true>(oriX + ox, oriY + oy, sx, sy, data);
-    }
-
-    bool IsValid() const{
-        return data && sizeX && sizeY;
-    }
-
-    bool IsLinear() const{
-        return oriX == 0 && oriY == 0;
-    }
-
-    auto Width() const{
-        return sizeX;
-    }
-
-    auto Height() const{
-        return sizeY;
-    }
-    T* GetRawPtr(){
-        return data->GetRawPtr();
-    }
-
-    const T* GetRawPtr() const {
-        return data->GetRawPtr();
-    }
-private:
-    DataT data;
-    uint32_t sizeX, sizeY;
-    uint32_t oriX, oriY;
-};
-
-template<typename T>
-SliceDataView<T, false> SliceData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) {
-    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
-}
-template<typename T>
-SliceDataView<T,true> SliceData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
-    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
-}
-template<typename T>
-SliceDataView<T,true> SliceData<T>::GetConstSubView(uint32_t ox, uint32_t oy, uint32_t sx, uint32_t sy) const{
-    return SliceDataView<T, false>(ox, oy, sx, sy, nullptr);
-}
-
-template<typename T>
-class SliceView{
-public:
-    SliceView(uint32_t sizeX, uint32_t sizeY, const T* srcP)
-    :sizeX(sizeX), sizeY(sizeY), data(srcP)
-    {
-        assert(sizeX && sizeY && srcP);
-    }
-
-
-    const T& operator()(uint32_t x, uint32_t y) const {
-        return data[(size_t)y * sizeX + x];
-    }
-
-
-    const T& At(uint32_t x, uint32_t y) const {
-        if(x >= sizeX || y >= sizeY){
-            throw std::out_of_range("SliceView At out of range");
-        }
-        return this->operator()(x, y);
-    }
-
-    uint32_t sizeX, sizeY;
-    const T* data;
-};
-
-
-template<typename T>
-class GridData{
-public:
-    GridData(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const T& init = T{})
-    :sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ)
-    {
-        size_t count = (size_t)sizeX * sizeY * sizeZ;
-        assert(count);
-        data = static_cast<T*>(std::malloc(count * sizeof(T)));
-        for(size_t i = 0; i < count; i++)
-            data[i] = init;
-    }
-
-    GridData(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, const T* srcP)
-    :sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ)
-    {
-        size_t count = (size_t)sizeX * sizeY * sizeZ;
-        assert(count);
-        data = static_cast<T*>(std::malloc(count * sizeof(T)));
-        std::memcpy(data, srcP, count * sizeof(T));
-    }
-
-    SliceData<T> GetSliceDataX(uint32_t x) const{
-        SliceData<T> slice(sizeY, sizeZ);
-        for(uint32_t z = 0; z < sizeZ; z++){
-            for(uint32_t y = 0; y < sizeY; y++){
-                slice(y, z) = this->operator()(x, y, z);
-            }
-        }
-        return slice;
-    }
-
-    SliceData<T> GetSliceDataY(uint32_t y) const{
-        SliceData<T> slice(sizeZ, sizeX);
-        for(uint32_t z = 0; z < sizeZ; z++){
-            for(uint32_t x = 0; x < sizeX; x++){
-                slice(z, x) = this->operator()(x, y, z);
-            }
-        }
-        return slice;
-    }
-
-    SliceData<T> GetSliceDataZ(uint32_t z) const{
-        SliceData<T> slice(sizeX, sizeY);
-        for(uint32_t y = 0; y < sizeY; y++){
-            for(uint32_t x = 0; x < sizeX; x++){
-                slice(x, y) = this->operator()(x, y, z);
-            }
-        }
-        return slice;
-    }
-
-    T& operator()(uint32_t x, uint32_t y, uint32_t z){
-        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
-    }
-
-    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const {
-        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
-    }
-
-    T& At(uint32_t x, uint32_t y, uint32_t z){
-        if(x >= sizeX || y >= sizeY || z >= sizeZ){
-            throw std::out_of_range("GridData At out of range");
-        }
-        return this->operator()(x, y, z);
-    }
-
-    const T& At(uint32_t x, uint32_t y, uint32_t z) const {
-        if(x >= sizeX || y >= sizeY || z >= sizeZ){
-            throw std::out_of_range("GridData At out of range");
-        }
-        return this->operator()(x, y, z);
-    }
-
-    GridDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz);
-
-    GridDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const;
-
-    GridDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const;
-
-    auto Width() const{
-        return sizeX;
-    }
-
-    auto Height() const{
-        return sizeY;
-    }
-
-    auto Depth() const{
-        return sizeZ;
-    }
-
-    T* GetRawPtr(){
-        return data;
-    }
-
-    const T* GetRawPtr() const {
-        return data;
-    }
-
-    size_t Size() const{
-        return (size_t)sizeX * sizeY * sizeZ;
-    }
-
-private:
-    uint32_t sizeX;
-    uint32_t sizeY;
-    uint32_t sizeZ;
-    T* data;
-};
-
-template<typename T, bool CONST = false>
-class GridDataView {
-
-    using DataT = std::conditional_t<CONST, const GridData<T>*, GridData<T>*>;
-
-public:
-    GridDataView(uint32_t oriX, uint32_t oriY, uint32_t oriZ, uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ, DataT srcP)
-    :oriX(oriX), oriY(oriY), oriZ(oriZ), sizeX(sizeX), sizeY(sizeY), sizeZ(sizeZ), data(srcP)
-    {
-
-    }
-    T& operator()(uint32_t x, uint32_t y, uint32_t z){
-        return data[size_t(z) * sizeX * sizeY + y * sizeX + x];
-    }
-
-    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const {
-        return data[size_t(z) * sizeX * sizeY + y * sizeX + x];
-    }
-
-    const T& At(uint32_t x, uint32_t y, uint32_t z) const{
-        if(x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ){
-            throw std::runtime_error("GridDataView out of range");
-        }
-        return this->operator()(x, y, z);
-    }
-
-    T& At(uint32_t x, uint32_t y, uint32_t z){
-        if(x < 0 || x >= sizeX || y < 0 || y >= sizeY || z < 0 || z >= sizeZ){
-            throw std::runtime_error("GridDataView out of range");
-        }
-        size_t idx = size_t(z) * sizeX * sizeY + y * sizeX +x;
-        return data[idx];
-    }
-
-    GridDataView<T,false> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz){
-        return GridDataView<T,false>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
-    }
-
-    GridDataView<T,true> GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
-        return GridDataView<T,true>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
-    }
-
-    GridDataView<T,true> GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
-        return GridDataView<T,true>(oriX + ox, oriY + oy, oriZ + oz, sx, sy, sz, data);
-    }
-
-    bool IsValid() const{
-        return data && sizeX && sizeY && sizeZ;
-    }
-
-    bool IsLinear() const{
-        return oriX == 0 && oriY == 0 && oriZ == 0;
-    }
-
-    auto Width() const{
-        return sizeX;
-    }
-
-    auto Height() const{
-        return sizeY;
-    }
-
-    auto Depth() const{
-        return sizeZ;
-    }
-
-    T* GetRawPtr(){
-        return data->GetRawPtr;
-    }
-
-    const T* GetRawPtr() const {
-        return data->GetRawPtr;
-    }
-private:
-    uint32_t oriX, oriY, oriZ;
-    uint32_t sizeX, sizeY, sizeZ;
-    T* data;
-};
-
-template<typename T>
-GridDataView<T,false> GridData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) {
-    return GridDataView<T,false>(ox, oy, oz, sx, sy, sz, data);
-}
-
-template<typename T>
-GridDataView<T,true> GridData<T>::GetSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
-    return GridDataView<T,true>(ox, oy, oz, sx, sy, sz, data);
-}
-
-template<typename T>
-GridDataView<T,true> GridData<T>::GetConstSubView(uint32_t ox, uint32_t oy, uint32_t oz, uint32_t sx, uint32_t sy, uint32_t sz) const {
-    return GridDataView<T,true>(ox, oy, oz, sx, sy, sz, data);
-}
-
-template<typename T>
-class GridView{
-public:
-    GridView(uint32_t sizeX, uint32_t sizeY, uint32_t sizeZ,const T* srcP)
-    :sizeX(sizeX),sizeY(sizeY),sizeZ(sizeZ),data(srcP)
-    {}
-
-    const T& operator()(uint32_t x, uint32_t y, uint32_t z) const{
-        return data[(size_t)z * sizeX * sizeY + (size_t)y * sizeX + x];
-    }
-
-
-    const T& At(uint32_t x, uint32_t y, uint32_t z) const {
-        if(x >= sizeX || y >= sizeY || z >= sizeZ){
-            throw std::out_of_range("GridView At out of range");
-        }
-        return this->operator()(x, y, z);
-    }
-
-    const T* data;
-    uint32_t sizeX;
-    uint32_t sizeY;
-    uint32_t sizeZ;
-};
 
 enum class CodecDevice {
     CPU, GPU
@@ -1307,10 +972,10 @@ struct VoxelVideoCodec{
     static constexpr bool Value = false;
 };
 
-#define Register_VoxelVideoCodec(VoxelT,device) \
-template<>\
-struct VoxelVideoCodec<VoxelT,device>{\
-    static constexpr bool Value = true;        \
+#define Register_VoxelVideoCodec(VoxelT, device) \
+template<>                                       \
+struct VoxelVideoCodec<VoxelT,device>{           \
+    static constexpr bool Value = true;          \
 };
 
 
@@ -1329,6 +994,7 @@ public:
     virtual GridVolumeCodec GetCodecType() const noexcept = 0;
 
     virtual CodecDevice GetCodecDevice() const noexcept = 0;
+
     /**
      * @note These infos may be not enough so we need derived this interface with template class with Voxel info.
      */
@@ -1397,7 +1063,7 @@ public:
 
     bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) override;
 
-private:
+protected:
     std::unique_ptr<CPUVolumeVideoCodecPrivate> _;
 };
 
@@ -1410,8 +1076,12 @@ template<typename T>
 class VolumeVideoCodec<T,CodecDevice::GPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
+    // will create own's new cuda context
     explicit VolumeVideoCodec(int GPUIndex = 0);
-    //cuda context
+
+    /**
+     * @param context CUcontext
+     */
     explicit VolumeVideoCodec(void* context);
 
     CodecDevice GetCodecDevice() const noexcept override{
@@ -1443,7 +1113,7 @@ public:
 
     bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) noexcept override;
 
-private:
+protected:
     std::unique_ptr<GPUVolumeVideoCodecPrivate> _;
 };
 
@@ -1452,40 +1122,43 @@ using GPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::GPU, std::enable_if
 
 
 struct VolumeFileDesc{
-    //todo use std::variant
-    VolumeFileDesc() {
 
-    };
-    ~VolumeFileDesc(){
+    void Set(VolumeType type, const VolumeFileDesc& desc){
+        if(type == VolumeType::Grid_RAW)
+            raw_desc = desc.raw_desc;
+        else if(type == VolumeType::Grid_SLICED)
+            sliced_desc = desc.sliced_desc;
+        else if(type == VolumeType::Grid_BLOCKED)
+            blocked_desc = desc.blocked_desc;
+        else if(type == VolumeType::Grid_ENCODED)
+            encoded_desc = desc.encoded_desc;
+        else if(type == VolumeType::Grid_BLOCKED_ENCODED)
+            encoded_blocked_desc = desc.encoded_blocked_desc;
+        Set(type);
+    }
 
+    void Set(VolumeType vol_type){
+        this->volume_type = vol_type;
     }
-    VolumeFileDesc(const VolumeFileDesc& other){
-        raw_desc = other.raw_desc;
-        sliced_desc = other.sliced_desc;
-        blocked_desc = other.blocked_desc;
-        encoded_desc = other.encoded_desc;
-        encoded_blocked_desc = other.encoded_blocked_desc;
-    }
-    VolumeFileDesc& operator=(const VolumeFileDesc& other){
-        new(this) VolumeFileDesc(other);
-        return *this;
-    }
-    union{
-      RawGridVolumeDesc raw_desc;
-      SlicedGridVolumeDesc sliced_desc;
-      BlockedGridVolumeDesc blocked_desc;
-      EncodedGridVolumeDesc encoded_desc;
-      EncodedBlockedGridVolumeDesc encoded_blocked_desc;
-    };
+
+
+    VolumeType volume_type = VolumeType::Grid_RAW;
+
+    RawGridVolumeDesc raw_desc;
+    SlicedGridVolumeDesc sliced_desc;
+    BlockedGridVolumeDesc blocked_desc;
+    EncodedGridVolumeDesc encoded_desc;
+    EncodedBlockedGridVolumeDesc encoded_blocked_desc;
+
 };
 
 inline bool CheckValidation(const VolumeFileDesc& desc, VolumeType type){
     switch (type) {
-        case VolumeType::Grid_RAW : return CheckValidation(desc.raw_desc);
-        case VolumeType::Grid_SLICED : return CheckValidation(desc.sliced_desc);
+        case VolumeType::Grid_RAW             : return CheckValidation(desc.raw_desc);
+        case VolumeType::Grid_SLICED          : return CheckValidation(desc.sliced_desc);
         case VolumeType::Grid_BLOCKED_ENCODED : return CheckValidation(desc.encoded_blocked_desc);
-        case VolumeType::Grid_ENCODED : return CheckValidation(desc.encoded_desc);
-        case VolumeType::Grid_BLOCKED : return CheckValidation(desc.blocked_desc);
+        case VolumeType::Grid_ENCODED         : return CheckValidation(desc.encoded_desc);
+        case VolumeType::Grid_BLOCKED         : return CheckValidation(desc.blocked_desc);
         default : return false;
     }
 }
@@ -1532,6 +1205,9 @@ public:
 
 };
 
+/**
+ * @note This class is not implied and not used.
+ */
 template<typename Voxel>
 class RawGridVolumeIOWrapper : public VolumeIOWrapper<Voxel,VolumeType::Grid_RAW>{
 public:
@@ -1543,6 +1219,9 @@ public:
     static void SaveVolumeToMetaFile(const VolumeT& volume, const std::string& filename) noexcept;
 };
 
+/**
+ * @note This class is not implied and not used.
+ */
 template<typename Voxel>
 class SlicedGridVolumeIOWrapper : public VolumeIOWrapper<Voxel, VolumeType::Grid_SLICED>{
 public:
@@ -1554,6 +1233,9 @@ public:
     static void SaveVolumeToMetaFile(const VolumeT& volume, const std::string& filename) noexcept;
 };
 
+/**
+ * @note This class is not implied and not used.
+ */
 template<typename Voxel>
 class BlockedGridVolumeIOWrapper : public VolumeIOWrapper<Voxel,VolumeType::Grid_BLOCKED>{
 public:
@@ -1564,7 +1246,9 @@ public:
 
 };
 
-
+/**
+ * @note This class is not implied and not used.
+ */
 template<typename Voxel>
 class EncodedGridVolumeIOWrapper : public VolumeIOWrapper<Voxel,VolumeType::Grid_ENCODED>{
 public:
@@ -1575,7 +1259,9 @@ public:
 
 };
 
-
+/**
+ * @note This class is not implied and not used.
+ */
 template<typename Voxel>
 class EncodedBlockedGridVolumeIOWrapper : public VolumeIOWrapper<Voxel,VolumeType::Grid_BLOCKED_ENCODED>{
 public:
@@ -1643,6 +1329,7 @@ public:
 
 template<typename T>
 CPUVolumeVideoCodec<T>::VolumeVideoCodec(int threadCount) {
+    _ = std::make_unique<CPUVolumeVideoCodecPrivate>();
     _->video_codec = VideoCodec::Create(CodecDevice::CPU);
     _->thread_count = threadCount;
 }

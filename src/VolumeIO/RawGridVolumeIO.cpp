@@ -1,67 +1,149 @@
 
 #include <VolumeUtils/Volume.hpp>
-
+#include "../Common/Utils.hpp"
+#include "../Common/Common.hpp"
+#include <fstream>
+#include <iostream>
+#include <json.hpp>
 VOL_BEGIN
 
 
 class RawGridVolumeFile {
-    std::pair<RawGridVolumeDesc, bool> ExtractDescFromNameStr(const std::string &filename) {
+    const char* raw          = "raw";
+    const char* volume_name  = "volume_name";
+    const char* voxel_type   = "voxel_type";
+    const char* voxel_format = "voxel_format";
+    const char* extend       = "extend";
+    const char* space        = "space";
+    const char* data_path    = "data_path";
 
+
+    std::pair<RawGridVolumeDesc, bool> ExtractDescFromNameStr(const std::string &filename) {
+        return {{}, false};
     }
 
     std::pair<RawGridVolumeDesc, bool> ExtractDescFromFile(const std::string &filename) {
         // read from json file
+        RawGridVolumeDesc desc;
+
+        std::ifstream in(filename);
+        if(!in.is_open()) return {desc, false};
+        nlohmann::json j;
+        in >> j;
+
+        auto& raw_ = j.at("desc");
+
+        desc.volume_name = raw_.count(volume_name) == 0 ? "none" : std::string(raw_.at(volume_name));
+        desc.voxel_info.type = StrToVoxelType(raw_.count(voxel_type) == 0 ? "unknown" : raw_.at(voxel_type));
+        desc.voxel_info.format = StrToVoxelFormat(raw_.count(voxel_format) == 0 ? "none" : raw_.at(voxel_format));
+        if(raw_.count(extend) != 0){
+            std::array<int, 3> shape = raw_.at(extend);
+            desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
+        }
+        if(raw_.count(space) != 0){
+            std::array<float, 3> sp = raw_.at(space);
+            desc.space = {sp[0], sp[1], sp[2]};
+        }
+        desc.data_path = raw_.count(data_path) == 0 ? "" : std::string(raw_.at(data_path));
+
+        return {desc, true};
     }
 
+
+
+
 public:
-    explicit RawGridVolumeFile(const std::string &filename) {
+
+    RawGridVolumeFile() = default;
+
+    bool Open(const std::string &filename){
         auto [desc0, ok0] = ExtractDescFromNameStr(filename);
         if (ok0) {
-            this->desc = desc0;
+            this->raw_desc = desc0;
         } else {
             auto [desc1, ok1] = ExtractDescFromFile(filename);
             if (ok1) {
-                this->desc = desc1;
+                this->raw_desc = desc1;
             } else {
                 throw VolumeFileOpenError("RawGridVolumeFile Open Error: " + filename);
             }
         }
     }
 
+    bool Save(const std::string &filename, const RawGridVolumeDesc& desc){
+        assert(CheckValidation(desc));
+        if(out.is_open()) out.close();
+
+        out.open(filename);
+        if(!out.is_open()){
+            std::cerr << "Open file failed : " << filename << std::endl;
+            return false;
+        }
+
+        raw_desc = desc;
+
+        nlohmann::json jj;
+
+        auto& j = jj["desc"];
+
+        j[volume_name]  = desc.volume_name;
+        j[voxel_type]   = VoxelTypeToStr(desc.voxel_info.type);
+        j[voxel_format] = VoxelFormatToStr(desc.voxel_info.format);
+        j[extend]       = {desc.extend.width, desc.extend.height, desc.extend.depth};
+        j[space]        = {desc.space.x, desc.space.y, desc.space.z};
+        j[data_path]    = desc.data_path;
+
+        out << jj;
+        out.flush();
+        return true;
+    }
+
     [[nodiscard]]
     const RawGridVolumeDesc &GetVolumeDesc() const {
-        return desc;
+        return raw_desc;
     }
 
     [[nodiscard]]
     const std::string &GetDataPath() const {
-        return data_path;
+        return raw_desc.data_path;
     }
 
 private:
-    RawGridVolumeDesc desc;
-    std::string data_path;
+    RawGridVolumeDesc raw_desc;
+    std::ofstream out;
 };
 
 class RawGridVolumeReaderPrivate {
 public:
 
+#ifndef USE_MAPPING_FILE
+    // file not so large
+    RawGridVolumeDesc desc;
+    RawGridVolumeFile file;
+    std::ifstream in;
 
+#else
+
+#endif
 };
-
-class RawGridVolumeReaderPrivateIOStreamImpl : public RawGridVolumeReaderPrivate {
-public:
-
-};
-
-//using mapping file will be better, but...
-class RawGridVolumeReaderPrivateMappingFileImpl : public RawGridVolumeReaderPrivate {
-public:
-
-};
-
 
 RawGridVolumeReader::RawGridVolumeReader(const std::string &filename) {
+    _ = std::make_unique<RawGridVolumeReaderPrivate>();
+
+    if(!_->file.Open(filename)){
+        throw VolumeFileOpenError("RawGridVolumeFile open failed : " + filename);
+    }
+
+    _->desc = _->file.GetVolumeDesc();
+    if(!CheckValidation(_->desc)){
+        PrintVolumeDesc(_->desc);
+        throw VolumeFileContextError("RawGridVolumeFile context is not right : " + filename);
+    }
+
+    _->in.open(_->file.GetDataPath(), std::ios::binary);
+    if(!_->in.is_open()){
+        throw std::runtime_error("Failed to open raw volume file : " + _->file.GetDataPath());
+    }
 
 }
 
@@ -70,38 +152,84 @@ RawGridVolumeReader::~RawGridVolumeReader() {
 }
 
 size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
+    assert(buf && size);
 
-    return 0;
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    auto copy_func = GetCopyBitsFunc(voxel_size);
+
+    return ReadVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
+                          [&copy_func, width = dstX - srcX, height = dstY - srcY,
+                           buf_size = size, dst_ptr = reinterpret_cast<uint8_t*>(buf)]
+                          (int dx, int dy, int dz, const void* src, size_t ele_size)->size_t{
+        size_t dst_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
+        if(dst_offset >= buf_size) return 0;
+        copy_func(reinterpret_cast<const uint8_t*>(src), dst_ptr + dst_offset);
+        return ele_size;
+    });
 }
 
 size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
+    if(!reader) return 0;
+    size_t read_size = 0;
 
-    return 0;
+    auto width = _->desc.extend.width;
+    auto height = _->desc.extend.height;
+    auto depth = _->desc.extend.depth;
+
+    int beg_x = std::max<int>(0, srcX), end_x = std::min<int>(dstX, width);
+    int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
+    int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
+    auto voxel_size = GetVoxelSize(_->desc.voxel_info);
+    std::vector<uint8_t> voxel(voxel_size, 0);
+    for(int z = beg_z; z < end_z; z++){
+        for(int y = beg_y; y < end_y; y++){
+            for(int x = beg_x; x < end_x; x++){
+                size_t src_offset = (size_t)z * width * height + (size_t)y * height + x;
+                _->in.seekg(src_offset, std::ios::beg);
+                _->in.read(reinterpret_cast<char*>(voxel.data()), voxel_size);
+                auto filled = reader(x - srcX, y - srcY, z - srcZ, voxel.data(), voxel_size);
+                read_size += filled;
+            }
+        }
+    }
+    return read_size;
 }
 
 const RawGridVolumeDesc &RawGridVolumeReader::GetVolumeDesc() const noexcept {
-
-    return {};
+    return _->desc;
 }
 
 class RawGridVolumeWriterPrivate{
 public:
+#ifndef USE_MAPPING_FILE
+    RawGridVolumeDesc desc;
+    RawGridVolumeFile file;
+    std::ofstream out;
+#else
 
+#endif
 };
 
-class RawGridVolumeWriterPrivateIOStreamImpl : public RawGridVolumeReaderPrivate {
-public:
-
-};
-
-//using mapping file will be better, but...
-class RawGridVolumeWriterPrivateMappingFileImpl : public RawGridVolumeReaderPrivate {
-public:
-
-};
 
 RawGridVolumeWriter::RawGridVolumeWriter(const std::string &filename, const RawGridVolumeDesc& desc) {
+    _ = std::make_unique<RawGridVolumeWriterPrivate>();
 
+    if(!CheckValidation(desc)){
+        PrintVolumeDesc(desc);
+        throw VolumeFileContextError("RawGridVolumeFile context wrong : " + filename);
+    }
+    _->desc = desc;
+
+    if(!_->file.Save(filename, desc)){
+        throw VolumeFileOpenError("RawGridVolume file save failed : " + filename);
+    }
+
+    _->out.open(_->file.GetDataPath(), std::ios::binary);
+    if(!_->out.is_open()){
+        throw std::runtime_error("Failed to open raw volume file : " + _->file.GetDataPath());
+    }
 }
 
 RawGridVolumeWriter::~RawGridVolumeWriter() {
@@ -109,14 +237,49 @@ RawGridVolumeWriter::~RawGridVolumeWriter() {
 }
 
 const RawGridVolumeDesc &RawGridVolumeWriter::GetVolumeDesc() const noexcept {
-    return {};
+    return _->desc;
 }
 
 void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
+    assert(buf && size);
 
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    auto copy_func = GetCopyBitsFunc(voxel_size);
+
+    return WriteVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
+                           [&copy_func, width = dstX - srcX, height = dstY - srcY,
+                            buf_size = size, src_ptr = reinterpret_cast<const uint8_t*>(buf)]
+                           (int dx, int dy, int dz, void* dst, size_t ele_size){
+        size_t src_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
+        if(src_offset >= buf_size) return;
+        copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
+    });
 }
 
 void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
+    if(!writer) return;
+
+    auto width = _->desc.extend.width;
+    auto height = _->desc.extend.height;
+    auto depth = _->desc.extend.depth;
+
+    int beg_x = std::max<int>(0, srcX), end_x = std::min<int>(dstX, width);
+    int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
+    int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
+    auto voxel_size = GetVoxelSize(_->desc.voxel_info);
+    std::vector<uint8_t> voxel(voxel_size, 0);
+    for(int z = beg_z; z < end_z; z++){
+        for(int y = beg_y; y < end_y; y++){
+            for(int x = beg_x; x < end_x; x++){
+                size_t dst_offset = (size_t)z * width * height + (size_t)y * height + x;
+                writer(x - srcX, y - srcY, z - srcZ, voxel.data(), voxel_size);
+                _->out.seekp(dst_offset, std::ios::beg);
+                _->out.write(reinterpret_cast<char*>(voxel.data()), voxel_size);
+            }
+        }
+    }
 
 }
 

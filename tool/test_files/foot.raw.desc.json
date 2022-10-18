@@ -1,11 +1,16 @@
 {
   "info": {
-    "version": [],
+    "version": "",
     "processor": "",
     "id": ""
   },
   "volume_type": "raw",
   "desc": {
-
+    "volume_name": "foot",
+    "voxel_type": "uint8",
+    "voxel_format": "r",
+    "extend": [256, 256, 256],
+    "space": [0.01, 0.01, 0.01],
+    "data_path": "foot_256_256_256_uint8.raw"
   }
 }

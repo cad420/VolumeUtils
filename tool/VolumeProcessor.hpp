@@ -123,6 +123,9 @@ public:
         };
     }
 
+    MappingOp(const MappingOp&) = default;
+    MappingOp& operator=(const MappingOp&) = default;
+
     MappingOp(MappingOp&& rhs) noexcept{
         func = std::move(rhs.func);
     }
@@ -271,13 +274,7 @@ public:
         ~Unit(){
 
         }
-        Unit(const Unit&){
 
-        }
-        Unit& operator=(const Unit& ){
-
-            return *this;
-        }
         std::string desc_filename;
         std::string statistics_filename;
         VolumeType type;

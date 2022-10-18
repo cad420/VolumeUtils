@@ -92,13 +92,13 @@ namespace{
 
             nlohmann::json j;
             io >> j;
-            if(j.count(encoded_blocked) == 0){
+            if(j.count("desc") == 0){
 
                 return false;
             }
-            auto encoded_block = j[encoded_blocked];
+            auto& encoded_block = j.at("desc");
 
-            desc.volume_name = encoded_block.count(volume_name) == 0 ? "none" : j.at(encoded_blocked);
+            desc.volume_name = encoded_block.count(volume_name) == 0 ? "none" : std::string(j.at(volume_name));
             desc.voxel_info.type = StrToVoxelType(encoded_block.count(voxel_type) == 0 ? "unknown" : encoded_block.at(voxel_type));
             desc.voxel_info.format = StrToVoxelFormat(encoded_block.count(voxel_format) == 0 ? "none" : encoded_block.at(voxel_format));
             if(encoded_block.count(extend) != 0){
@@ -113,7 +113,7 @@ namespace{
             desc.padding = encoded_block.count(padding) == 0 ? 0 : (int)j[padding];
             desc.codec = StrToGridVolumeDataCodec(encoded_block.count(volume_codec) == 0 ? "none" : j.at(volume_codec));
 
-            desc.data_path = encoded_block.count(data_path) == 0 ? "none" : j.at(data_path);
+            desc.data_path = encoded_block.count(data_path) == 0 ? "none" : std::string(j.at(data_path));
 
             auto ret = OpenMetaFile(desc.data_path);
 
@@ -122,13 +122,19 @@ namespace{
 
         bool Open(const std::string& filename,const EncodedBlockedGridVolumeDesc& volume_desc){
             io.open(filename, std::ios::out);
-            if(!io.is_open()) return false;
-            if(CheckValidation(volume_desc)) return false;
+            if(!io.is_open()){
+                std::cerr << "Saved EncodedBlockedGridVolumeDesc file open failed : " << filename << std::endl;
+                return false;
+            }
+            if(!CheckValidation(volume_desc)){
+                PrintVolumeDesc(volume_desc);
+                return false;
+            }
             this->desc = volume_desc;
 
             nlohmann::json j;
 
-            auto encoded_block = j[encoded_blocked];
+            auto& encoded_block = j["desc"];
             encoded_block[volume_name] = desc.volume_name;
             encoded_block[voxel_type] = VoxelTypeToStr(desc.voxel_info.type);
             encoded_block[voxel_format] = VoxelFormatToStr(desc.voxel_info.format);
@@ -360,7 +366,7 @@ size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &bl
     size_t offset = 0;
     size_t read_size = 0;
     while(offset < size){
-        size_t packet_size = reinterpret_cast<size_t*>(ptr)[offset];
+        size_t packet_size = *reinterpret_cast<size_t*>(ptr + offset);
         read_size += packet_size;
         auto& packet_buffer = packets.emplace_back();
         packet_buffer.resize(packet_size, 0);
@@ -529,8 +535,8 @@ void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blo
     }
     size_t offset = 0;
     for(auto& packet : packets){
-        auto p = reinterpret_cast<size_t*>(buf);
-        p[offset] = packet.size();
+        auto p = reinterpret_cast<size_t*>(buf + offset);
+        *p = packet.size();
         offset += 8;
         std::memcpy(buf + offset, packet.data(), packet.size());
         offset += packet.size();

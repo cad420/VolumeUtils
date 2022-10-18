@@ -15,7 +15,17 @@ public:
     std::unordered_map<VolumeType, std::queue<Unit>> unit_mp;
     int type_mask;
     VolumeRange range;
-    
+
+    void Init(){
+        raw_reader = std::make_unique<RawGridVolumeReader>(src.desc_filename);
+    }
+
+    void Reset(){
+        raw_reader.reset();
+        unit_mp.clear();
+        type_mask = 0;
+        range = {0, 0, 0, 0, 0, 0};
+    }
 
     template<VolumeType... types>
     void Convert();
@@ -68,13 +78,18 @@ public:
                 .reader = raw_reader.get(),
                 .range = range,
         };
+        std::vector<std::unique_ptr<SlicedGridVolumeWriter>> writers;
         while(!units.empty()){
             auto unit = units.front();
             units.pop();
             // init writer
             assert(unit.type == VolumeType::Grid_SLICED);
 
-            SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
+//            SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
+
+            writers.push_back(std::make_unique<SlicedGridVolumeWriter>(
+                    unit.desc_filename, unit.desc.sliced_desc
+                    ));
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -86,7 +101,7 @@ public:
             auto mapping_func = unit.ops.mapping.GetOp();
 
             packed.writers.push_back({
-                                             .other_writer = &writer,
+                                             .other_writer = writers.back().get(),
                                              .other_has_ds = has_ds,
                                              .other_has_mp = has_mp,
                                              .other_has_ss = has_ss,
@@ -180,7 +195,7 @@ public:
                 .range = range,
                 .oblocked_encoded_unit = oblocked_encoded_unit
         };
-        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>({});
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>(packed);
     }
     template<>
     void Convert<VolumeType::Grid_RAW,VolumeType::Grid_BLOCKED_ENCODED>(){
@@ -222,7 +237,10 @@ public:
             return;
         }
         assert(unit_mp[VolumeType::Grid_SLICED].size() == 1 && unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() == 1);
-
+#ifdef SLICE_FILE_NO_RANDOM_ACCESS
+        Convert<VolumeType::Grid_SLICED>();
+        Convert<VolumeType::Grid_BLOCKED_ENCODED>();
+#else
         auto oslice_unit = unit_mp[VolumeType::Grid_SLICED].front();
         unit_mp[VolumeType::Grid_SLICED].pop();
         auto oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
@@ -242,7 +260,8 @@ public:
                 .other_mp_func = oslice_unit.ops.mapping.GetOp(),
                 .other_ss_func = other_ss
         };
-        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>({});
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>(packed);
+#endif
     }
 
     std::unordered_map<int, std::function<void()>> mask_func;
@@ -277,13 +296,14 @@ template<typename Voxel>
 VolumeProcessor<Voxel, VolumeType::Grid_RAW>&
 VolumeProcessor<Voxel, VolumeType::Grid_RAW>::SetSource(const Unit& u, const VolumeRange& range) {
     assert(u.type == VolumeType::Grid_RAW);
-    if(!CheckValidation(u.desc.raw_desc)){
-        std::cerr << "Invalid source volume desc" << std::endl;
-        return *this;
-    }
+//    if(!CheckValidation(u.desc.raw_desc)){
+//        std::cerr << "Invalid source volume desc" << std::endl;
+//        return *this;
+//    }
+    _->Reset();
     _->src = u;
     _->range = range;
-
+    _->Init();
     return *this;
 }
 

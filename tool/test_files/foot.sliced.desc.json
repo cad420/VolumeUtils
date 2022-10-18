@@ -10,11 +10,11 @@
     "volume_name": "foot",
     "voxel_type": "uint8",
     "voxel_format": "r",
-    "extend": [512,512,512],
+    "extend": [256,256,256],
     "space": [0.01,0.01,0.01],
     "axis": 2,
-    "prefix": "",
+    "prefix": "foot_",
     "postfix": "",
-    "setw": 0
+    "setw": 3
   }
 }
