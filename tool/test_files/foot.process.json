@@ -20,7 +20,7 @@
           "voxel_format": "r",
           "extend": [256,256,256],
           "space": [0.01,0.01,0.01],
-          "block_length": 14,
+          "block_length": 62,
           "padding": 1,
           "volume_codec": "video",
           "data_path" : "genfoot_4p1_max_lod0_256_256_256_uint8.ebd"
@@ -84,7 +84,7 @@
           "voxel_format": "r",
           "extend": [128, 128, 128],
           "space": [0.01, 0.01, 0.01],
-          "block_length": 14,
+          "block_length": 62,
           "padding": 1,
           "volume_codec": "video",
           "data_path" : "genfoot_4p1_max_lod1_256_256_256_uint8.ebd"

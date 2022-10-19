@@ -97,7 +97,7 @@ namespace{
         }
 
         size_t Read(void* buf, size_t size) override{
-            assert(size >= tif_slice_info.width * tif_slice_info.height * tif_slice_info.samplers_per_pixel * tif_slice_info.bits_per_sampler);
+            assert(size >= tif_slice_info.width * tif_slice_info.height * tif_slice_info.samplers_per_pixel * tif_slice_info.bits_per_sampler / 8);
             return Read(0, tif_slice_info.height, buf, size);
         }
 
@@ -284,6 +284,7 @@ SlicedGridVolumeReader::SlicedGridVolumeReader(const std::string &filename) {
         throw VolumeFileOpenError("SliceGridVolumeFile not supported slice data format : " + _->file.GetSliceDataFormat());
     }
     _->desc = _->file.GetVolumeDesc();
+    _->desc.Generate();
     if(!CheckValidation(_->desc)){
         PrintVolumeDesc(_->desc);
         throw VolumeFileContextError("SliceGridVolumeFile context is not right : " + filename);
@@ -526,8 +527,8 @@ SlicedGridVolumeWriter::SlicedGridVolumeWriter(const std::string &filename, cons
     _ = std::make_unique<SlicedGridVolumeWriterPrivate>();
     _->desc = desc;
     _->desc.Generate();
-    _->file.Save(filename, desc);
     _->file.SetSliceDataFormat(DefaultSliceDataFormat);
+    _->file.Save(filename, desc);
 
     _->slice_info = {.width = (int)desc.extend.width, .height = (int)desc.extend.height,
                      .samplers_per_pixel = GetVoxelSampleCount(desc.voxel_info.format),

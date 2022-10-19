@@ -39,13 +39,15 @@ public:
                 .reader = raw_reader.get(),
                 .range = range,
         };
+
+        std::vector<std::unique_ptr<RawGridVolumeWriter>> raw_writers;
         while(!units.empty()){
             auto unit = units.front();
             units.pop();
             // init writer
             assert(unit.type == VolumeType::Grid_RAW);
 
-            RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
+            auto& writer = raw_writers.emplace_back(std::make_unique<RawGridVolumeWriter>(unit.desc_filename, unit.desc.raw_desc));
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -57,7 +59,7 @@ public:
             auto mapping_func = unit.ops.mapping.GetOp();
 
             packed.writers.push_back({
-                                             .other_writer = &writer,
+                                             .other_writer = writer.get(),
                                              .other_has_ds = has_ds,
                                              .other_has_mp = has_mp,
                                              .other_has_ss = has_ss,
@@ -121,6 +123,7 @@ public:
                 .range = range,
         };
         // raw
+        std::vector<std::unique_ptr<RawGridVolumeWriter>> raw_writers;
         {
             auto &units = unit_mp[VolumeType::Grid_RAW];
             while (!units.empty()) {
@@ -129,7 +132,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_RAW);
 
-                RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
+                auto& writer = raw_writers.emplace_back(std::make_unique<RawGridVolumeWriter>(unit.desc_filename, unit.desc.raw_desc));
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -141,7 +144,7 @@ public:
                 auto mapping_func = unit.ops.mapping.GetOp();
 
                 packed.writers.push_back({
-                                                 .other_writer = &writer,
+                                                 .other_writer = writer.get(),
                                                  .other_has_ds = has_ds,
                                                  .other_has_mp = has_mp,
                                                  .other_has_ss = has_ss,
@@ -152,6 +155,7 @@ public:
             }
         }
         // slice
+        std::vector<std::unique_ptr<SlicedGridVolumeWriter>> slice_writers;
         {
             auto& units = unit_mp[VolumeType::Grid_SLICED];
             while(!units.empty()){
@@ -160,7 +164,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_SLICED);
 
-                SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
+                auto& writer = slice_writers.emplace_back(std::make_unique<SlicedGridVolumeWriter>(unit.desc_filename, unit.desc.sliced_desc));
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -172,7 +176,7 @@ public:
                 auto mapping_func = unit.ops.mapping.GetOp();
 
                 packed.writers.push_back({
-                                                 .other_writer = &writer,
+                                                 .other_writer = writer.get(),
                                                  .other_has_ds = has_ds,
                                                  .other_has_mp = has_mp,
                                                  .other_has_ss = has_ss,
@@ -197,6 +201,7 @@ public:
         };
         IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>(packed);
     }
+
     template<>
     void Convert<VolumeType::Grid_RAW,VolumeType::Grid_BLOCKED_ENCODED>(){
         if(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() > 1
@@ -228,6 +233,7 @@ public:
         };
         IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>({});
     }
+
     template<>
     void Convert<VolumeType::Grid_SLICED,VolumeType::Grid_BLOCKED_ENCODED>(){
         if(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() > 1
@@ -332,6 +338,7 @@ void VolumeProcessor<Voxel, VolumeType::Grid_RAW>::Convert() {
     catch (const std::exception& e) {
         std::cerr<<" Convert failed : " << e.what() << std::endl;
     }
+    _->type_mask = 0;
 }
 
 template class VolumeProcessor<VoxelRU8, vol::VolumeType::Grid_RAW>;

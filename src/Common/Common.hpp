@@ -40,11 +40,11 @@ inline constexpr const char* VoxelTypeToStr(VoxelType type){
 
 inline constexpr const char* VoxelFormatToStr(VoxelFormat format){
     switch (format) {
-        case VoxelFormat::R : return "R";
-        case VoxelFormat::RG : return "RG";
-        case VoxelFormat::RGB : return "RGB";
-        case VoxelFormat::RGBA : return "RGBA";
-        default : return "NONE";
+        case VoxelFormat::R : return "r";
+        case VoxelFormat::RG : return "rg";
+        case VoxelFormat::RGB : return "rgb";
+        case VoxelFormat::RGBA : return "rgba";
+        default : return "none";
     }
 }
 

@@ -53,8 +53,8 @@ struct IOImpl {
         auto eb_mapping_func = oblocked_encoded_unit.ops.mapping.GetOp();
         StatisticsOp<Voxel> eb_ss;
 
-        for (int y_turn = 0; y_turn < y_read_count; y_turn++) {
-            for (int z_turn = 0; z_turn < z_read_count; z_turn++) {
+        for (int z_turn = 0; z_turn < z_read_count; z_turn++) {
+            for (int y_turn = 0; y_turn < y_read_count; y_turn++) {
                 reader->ReadVolumeData(range.src_x - padding,
                                        range.src_y + y_turn * block_length - padding,
                                        range.src_z + z_turn * block_length - padding,
@@ -64,6 +64,7 @@ struct IOImpl {
                                        grid.GetRawDataPtr(), grid_extend.size() * sizeof(Voxel));
                 // write grid's blocks into file
                 for (int x_turn = 0; x_turn < x_block_count; x_turn++) {
+                    std::cout << "write block : (" << x_turn << ", " << y_turn << ", " << z_turn << ")" << std::endl;
                     encoded_blocked_writer.WriteBlockData({x_turn, y_turn, z_turn},
                                                           [&](int dx, int dy, int dz, void *dst, size_t ele_size) {
                                                               auto p = reinterpret_cast<Voxel *>(dst);

@@ -80,6 +80,10 @@ public:
 
     int64_t pts = 0;
 
+    FFmpegCodecPrivate(){
+        av_log_set_level(AV_LOG_ERROR);
+    }
+
     void FreeContext(){
         state = INVALID;
         codec = nullptr;
@@ -91,14 +95,10 @@ public:
             av_frame_free(&frame);
         pts = 0;
     }
-    static void my_log_callback(void *ptr, int level, const char *fmt, va_list vargs)
-    {
-//        vprintf(fmt, vargs);
-    }
+
     bool InitEncodeContext(const SharedVideoCodecParams& params){
         FreeContext();
-        av_log_set_level(AV_LOG_QUIET);
-        av_log_set_callback(my_log_callback);
+
         if(params.fmt == vol::VideoCodecFormat::NONE){
             std::cerr << "Invalid format NONE" << std::endl;
             return false;
@@ -140,6 +140,7 @@ public:
         // because interfaces in Volume.hpp not consider of encode quality... just set medium
         av_opt_set(ctx->priv_data, "preset", "medium", 0);
         av_opt_set(ctx->priv_data, "tune", "fastdecode", 0);
+        av_opt_set(ctx->priv_data, "x265-params", "log-level=0", 0);
         int ret = avcodec_open2(ctx, codec, nullptr);
         if(ret < 0){
             std::cerr << "AVCodec error: open codec failed" << std::endl;

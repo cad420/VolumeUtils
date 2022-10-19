@@ -70,13 +70,14 @@ public:
                 .reader = sliced_reader.get(),
                 .range = range,
         };
+        std::vector<std::unique_ptr<RawGridVolumeWriter>> writers;
         while(!units.empty()){
             auto unit = units.front();
             units.pop();
             // init writer
             assert(unit.type == VolumeType::Grid_RAW);
 
-            RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
+            auto& writer = writers.emplace_back(std::make_unique<RawGridVolumeWriter>(unit.desc_filename, unit.desc.raw_desc));
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -88,7 +89,7 @@ public:
             auto mapping_func = unit.ops.mapping.GetOp();
 
             packed.writers.push_back({
-                                             .other_writer = &writer,
+                                             .other_writer = writer.get(),
                                              .other_has_ds = has_ds,
                                              .other_has_mp = has_mp,
                                              .other_has_ss = has_ss,
@@ -111,13 +112,14 @@ public:
                 .reader = sliced_reader.get(),
                 .range = range,
         };
+        std::vector<std::unique_ptr<SlicedGridVolumeWriter>> writers;
         while(!units.empty()){
             auto unit = units.front();
             units.pop();
             // init writer
             assert(unit.type == VolumeType::Grid_SLICED);
 
-            SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
+            auto& writer = writers.emplace_back(std::make_unique<SlicedGridVolumeWriter>(unit.desc_filename, unit.desc.sliced_desc));
 
             int op_mask = unit.ops.op_mask;
             bool has_mp = op_mask & Mapping;
@@ -129,7 +131,7 @@ public:
             auto mapping_func = unit.ops.mapping.GetOp();
 
             packed.writers.push_back({
-                .other_writer = &writer,
+                .other_writer = writer.get(),
                 .other_has_ds = has_ds,
                 .other_has_mp = has_mp,
                 .other_has_ss = has_ss,
@@ -137,60 +139,6 @@ public:
                 .other_mp_func = mapping_func,
                 .other_ss_func = ss
             });
-
-            /*
-            auto slice_bytes = CalSliceSize();
-            std::vector<uint8_t> slice_buffer(slice_bytes);
-            auto dummy_slice_buffer = slice_buffer;
-
-            // read source slice in each iterate, maybe optimized later
-            for(int z = range.src_z; z <= range.dst_z; z++){
-                auto ptr = (z - range.src_z) % 2 == 0 ? slice_buffer.data() : dummy_slice_buffer.data();
-                sliced_reader->ReadSliceData(z, range.src_x, range.src_y,range.dst_x, range.dst_y, ptr, slice_bytes);
-                SliceDataView<Voxel> slice_view(range.dst_x - range.src_x,
-                                                range.dst_y - range.src_y,reinterpret_cast<Voxel*>(ptr));
-                if(has_mp){
-
-                    for(int i = 0; i < slice_h; i++){
-                        for(int j = 0; j < slice_w; j++){
-                            auto& voxel = slice_view.At(j, i);
-                            voxel = mapping_func(voxel);
-                        }
-                    }
-                }
-                if(has_ds){
-                    if((z - range.src_z) % 2){
-                        // down sampling
-                        auto dummy_ptr = dummy_slice_buffer.data();
-                        SliceDataView<Voxel> dummy_slice_view(range.dst_x - range.src_x,
-                                                              range.dst_y - range.src_y,reinterpret_cast<Voxel*>(dummy_ptr));
-                        for(int i = 0; i < slice_h; i++){
-                            for(int j = 0; j < slice_w; j++){
-                                slice_view.At(j, i) = down_sampling_func(slice_view.At(j, i), dummy_slice_view.At(j, i));
-                            }
-                        }
-                    }
-                }
-                if(has_ss){
-                   if(!has_ds || (z - range.src_z) % 2){
-                       // no down sampling so statistics each z
-                       // or has down sampling only statistics for odd z
-                       for(int i = 0; i < slice_h; i++){
-                           for(int j = 0; j < slice_w; j++){
-                               ss->AddVoxel(slice_view.At(j, i));
-                           }
-                       }
-                   }
-                }
-                if(!has_ds || (z - range.src_z) % 2){
-                    // write slice
-                    //to down sampling in slice
-                    DownSamplingInplace(slice_view, down_sampling_func);
-                    writer.WriteSliceData(z - range.src_z, ptr, slice_bytes);
-                }
-
-            }
-            */
         }
         IOImpl<Voxel>::ConvertRawOrSlicedImpl(packed);
     }
@@ -205,6 +153,7 @@ public:
                 .range = range,
         };
         // raw
+        std::vector<std::unique_ptr<RawGridVolumeWriter>> raw_writers;
         {
             auto &units = unit_mp[VolumeType::Grid_RAW];
             while (!units.empty()) {
@@ -213,7 +162,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_RAW);
 
-                RawGridVolumeWriter writer(unit.desc_filename, unit.desc.raw_desc);
+                auto& writer = raw_writers.emplace_back(std::make_unique<RawGridVolumeWriter>(unit.desc_filename, unit.desc.raw_desc));
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -225,7 +174,7 @@ public:
                 auto mapping_func = unit.ops.mapping.GetOp();
 
                 packed.writers.push_back({
-                                                 .other_writer = &writer,
+                                                 .other_writer = writer.get(),
                                                  .other_has_ds = has_ds,
                                                  .other_has_mp = has_mp,
                                                  .other_has_ss = has_ss,
@@ -236,6 +185,7 @@ public:
             }
         }
         // slice
+        std::vector<std::unique_ptr<SlicedGridVolumeWriter>> slice_writers;
         {
             auto& units = unit_mp[VolumeType::Grid_SLICED];
             while(!units.empty()){
@@ -244,7 +194,7 @@ public:
                 // init writer
                 assert(unit.type == VolumeType::Grid_SLICED);
 
-                SlicedGridVolumeWriter writer(unit.desc_filename, unit.desc.sliced_desc);
+                auto& writer = slice_writers.emplace_back(std::make_unique<SlicedGridVolumeWriter>(unit.desc_filename, unit.desc.sliced_desc));
 
                 int op_mask = unit.ops.op_mask;
                 bool has_mp = op_mask & Mapping;
@@ -256,7 +206,7 @@ public:
                 auto mapping_func = unit.ops.mapping.GetOp();
 
                 packed.writers.push_back({
-                                                 .other_writer = &writer,
+                                                 .other_writer = writer.get(),
                                                  .other_has_ds = has_ds,
                                                  .other_has_mp = has_mp,
                                                  .other_has_ss = has_ss,
@@ -279,7 +229,7 @@ public:
                 .range = range,
                 .oblocked_encoded_unit = oblocked_encoded_unit
         };
-        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>({});
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<false>(packed);
     }
 
     //需要slice数据存储格式支持随机写
@@ -351,7 +301,7 @@ public:
                 .other_mp_func = oraw_unit.ops.mapping.GetOp(),
                 .other_ss_func = other_ss
         };
-        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>({});
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>(packed);
 
     }
 
@@ -421,6 +371,7 @@ void VolumeProcessor<Voxel, VolumeType::Grid_SLICED>::Convert(){
     catch (const std::exception& e) {
         std::cerr<<" Convert failed : " << e.what() << std::endl;
     }
+    _->type_mask = 0;
 }
 
 template class VolumeProcessor<VoxelRU8, vol::VolumeType::Grid_SLICED>;
