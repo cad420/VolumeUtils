@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(VolumeUtils)
 
+option(ENABLE_HIGH_PERFORMANCE "" ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
@@ -27,6 +28,10 @@ target_compile_features(
         PUBLIC
         cxx_std_20
 )
+
+if(ENABLE_HIGH_PERFORMANCE)
+    target_compile_definitions(VolumeUtils PRIVATE HIGH_PERFORMANCE)
+endif()
 
 set(
     LIBTIFF_LIBS

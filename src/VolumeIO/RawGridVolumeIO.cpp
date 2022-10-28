@@ -1,12 +1,13 @@
-
 #include <VolumeUtils/Volume.hpp>
+
 #include "../Common/Utils.hpp"
 #include "../Common/Common.hpp"
+
 #include <fstream>
 #include <iostream>
 #include <json.hpp>
-VOL_BEGIN
 
+VOL_BEGIN
 
 class RawGridVolumeFile {
     const char* raw          = "raw";
@@ -17,8 +18,8 @@ class RawGridVolumeFile {
     const char* space        = "space";
     const char* data_path    = "data_path";
 
-
     std::pair<RawGridVolumeDesc, bool> ExtractDescFromNameStr(const std::string &filename) {
+        NOT_IMPL
         return {{}, false};
     }
 
@@ -48,9 +49,6 @@ class RawGridVolumeFile {
 
         return {desc, true};
     }
-
-
-
 
 public:
 
@@ -115,13 +113,11 @@ private:
 
 class RawGridVolumeReaderPrivate {
 public:
-
 #ifndef USE_MAPPING_FILE
     // file not so large
     RawGridVolumeDesc desc;
     RawGridVolumeFile file;
     std::ifstream in;
-
 #else
 
 #endif
@@ -142,37 +138,51 @@ RawGridVolumeReader::RawGridVolumeReader(const std::string &filename) {
 
     _->in.open(_->file.GetDataPath(), std::ios::binary);
     if(!_->in.is_open()){
-        throw std::runtime_error("Failed to open raw volume file : " + _->file.GetDataPath());
+        throw VolumeFileOpenError("Failed to open raw volume file : " + _->file.GetDataPath());
     }
-
 }
 
 RawGridVolumeReader::~RawGridVolumeReader() {
 
 }
 
-size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept {
-    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
-    assert(buf && size);
+void RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf) {
+    assert(buf && srcX < dstX && srcY < dstY && srcZ < dstZ);
 
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
-
     return ReadVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
                           [&copy_func, width = dstX - srcX, height = dstY - srcY,
-                           buf_size = size, dst_ptr = reinterpret_cast<uint8_t*>(buf)]
-                          (int dx, int dy, int dz, const void* src, size_t ele_size)->size_t{
+                           dst_ptr = reinterpret_cast<uint8_t*>(buf)]
+                          (int dx, int dy, int dz, const void* src, size_t ele_size){
         size_t dst_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
-        if(dst_offset >= buf_size) return 0;
         copy_func(reinterpret_cast<const uint8_t*>(src), dst_ptr + dst_offset);
-        return ele_size;
     });
+#else
+    auto width = _->desc.extend.width;
+    auto height = _->desc.extend.height;
+    auto depth = _->desc.extend.depth;
+
+    int beg_x = std::max<int>(0, srcX), end_x = std::min<int>(dstX, width);
+    int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
+    int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    size_t x_voxel_size = voxel_size * (end_x - beg_x);
+    std::vector<uint8_t> voxel(x_voxel_size, 0);
+    for(int z = beg_z; z < end_z; z++){
+        for(int y = beg_y; y < end_y; y++){
+            size_t src_offset_beg = (size_t)z * width * height + (size_t)y * height + beg_x;
+            _->in.seekg(src_offset_beg, std::ios::beg);
+            _->in.read(reinterpret_cast<char*>(voxel.data()), x_voxel_size);
+            std::memcpy(reinterpret_cast<uint8_t*>(buf) + src_offset_beg, voxel.data(), x_voxel_size);
+        }
+    }
+#endif
 }
 
-size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept {
-    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
-    if(!reader) return 0;
-    size_t read_size = 0;
+void RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) {
+    assert(reader && srcX < dstX && srcY < dstY && srcZ < dstZ);
 
     auto width = _->desc.extend.width;
     auto height = _->desc.extend.height;
@@ -182,22 +192,21 @@ size_t RawGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dst
     int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
     int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
     auto voxel_size = GetVoxelSize(_->desc.voxel_info);
-    std::vector<uint8_t> voxel(voxel_size, 0);
+    auto x_voxel_size = voxel_size * (end_x - beg_x);
+    std::vector<uint8_t> voxel(x_voxel_size, 0);
     for(int z = beg_z; z < end_z; z++){
         for(int y = beg_y; y < end_y; y++){
+            size_t src_offset_beg = (size_t)z * width * height + (size_t)y * height + beg_x;
+            _->in.seekg(src_offset_beg, std::ios::beg);
+            _->in.read(reinterpret_cast<char*>(voxel.data()), x_voxel_size);
             for(int x = beg_x; x < end_x; x++){
-                size_t src_offset = (size_t)z * width * height + (size_t)y * height + x;
-                _->in.seekg(src_offset, std::ios::beg);
-                _->in.read(reinterpret_cast<char*>(voxel.data()), voxel_size);
-                auto filled = reader(x - srcX, y - srcY, z - srcZ, voxel.data(), voxel_size);
-                read_size += filled;
+                reader(x - srcX, y - srcY, z - srcZ, voxel.data() + x * voxel_size, voxel_size);
             }
         }
     }
-    return read_size;
 }
 
-const RawGridVolumeDesc &RawGridVolumeReader::GetVolumeDesc() const noexcept {
+RawGridVolumeDesc RawGridVolumeReader::GetVolumeDesc() const noexcept {
     return _->desc;
 }
 
@@ -236,30 +245,47 @@ RawGridVolumeWriter::~RawGridVolumeWriter() {
 
 }
 
-const RawGridVolumeDesc &RawGridVolumeWriter::GetVolumeDesc() const noexcept {
+RawGridVolumeDesc RawGridVolumeWriter::GetVolumeDesc() const noexcept {
     return _->desc;
 }
 
-void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept {
-    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
-    assert(buf && size);
+void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf) {
+    assert(buf && srcX < dstX && srcY < dstY && srcZ < dstZ);
 
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
-
     return WriteVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
                            [&copy_func, width = dstX - srcX, height = dstY - srcY,
-                            buf_size = size, src_ptr = reinterpret_cast<const uint8_t*>(buf)]
+                            src_ptr = reinterpret_cast<const uint8_t*>(buf)]
                            (int dx, int dy, int dz, void* dst, size_t ele_size){
         size_t src_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
-        if(src_offset >= buf_size) return;
         copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
     });
+#else
+    auto width = _->desc.extend.width;
+    auto height = _->desc.extend.height;
+    auto depth = _->desc.extend.depth;
+
+    int beg_x = std::max<int>(0, srcX), end_x = std::min<int>(dstX, width);
+    int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
+    int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
+    auto voxel_size = GetVoxelSize(_->desc.voxel_info);
+    auto x_voxel_size = voxel_size * (end_x - beg_x);
+    std::vector<uint8_t> voxel(x_voxel_size, 0);
+    for(int z = beg_z; z < end_z; z++){
+        for(int y = beg_y; y < end_y; y++){
+            size_t dst_offset_beg = (size_t)z * width * height + (size_t)y * height + beg_x;
+            std::memcpy(voxel.data(), reinterpret_cast<const uint8_t*>(buf)+ dst_offset_beg, x_voxel_size);
+            _->out.seekp(dst_offset_beg, std::ios::beg);
+            _->out.write(reinterpret_cast<char*>(voxel.data()), x_voxel_size);
+        }
+    }
+#endif
 }
 
-void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept {
-    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
-    if(!writer) return;
+void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) {
+    assert(writer && srcX < dstX && srcY < dstY && srcZ < dstZ);
 
     auto width = _->desc.extend.width;
     auto height = _->desc.extend.height;
@@ -269,22 +295,19 @@ void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX
     int beg_y = std::max<int>(0, srcY), end_y = std::min<int>(dstY, height);
     int beg_z = std::max<int>(0, srcZ), end_z = std::min<int>(dstZ, depth);
     auto voxel_size = GetVoxelSize(_->desc.voxel_info);
-    std::vector<uint8_t> voxel(voxel_size, 0);
+    auto x_voxel_size = voxel_size * (end_x - beg_x);
+    std::vector<uint8_t> voxel(x_voxel_size, 0);
     for(int z = beg_z; z < end_z; z++){
         for(int y = beg_y; y < end_y; y++){
             for(int x = beg_x; x < end_x; x++){
                 size_t dst_offset = (size_t)z * width * height + (size_t)y * height + x;
-                writer(x - srcX, y - srcY, z - srcZ, voxel.data(), voxel_size);
-                _->out.seekp(dst_offset, std::ios::beg);
-                _->out.write(reinterpret_cast<char*>(voxel.data()), voxel_size);
+                writer(x - srcX, y - srcY, z - srcZ, voxel.data() + x * voxel_size, voxel_size);
             }
+            size_t dst_offset_beg = (size_t)z * width * height + (size_t)y * height + beg_x;
+            _->out.seekp(dst_offset_beg, std::ios::beg);
+            _->out.write(reinterpret_cast<char*>(voxel.data()), x_voxel_size);
         }
     }
-
 }
 
-
-
-
 VOL_END
-

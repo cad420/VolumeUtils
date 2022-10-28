@@ -257,8 +257,8 @@ size_t FFmpegCodec::DecodePacketIntoFrames(const Packet &packet, void *buf, size
     if(ret < 0)
         throw VideoCodecError("AVDecode error: packet make writable failed with error " + std::to_string(ret));
 
-    _->pkt->data = reinterpret_cast<uint8_t*>(buf);
-    _->pkt->size = size;
+    _->pkt->data = const_cast<uint8_t*>(packet.data());
+    _->pkt->size = packet.size();
 
     return AV__DecodePacketIntoFrames(_->ctx, _->frame, _->pkt, reinterpret_cast<uint8_t*>(buf));
 }

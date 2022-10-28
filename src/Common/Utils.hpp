@@ -1,11 +1,12 @@
 #pragma once
+
 #include <functional>
 
 class ScopeGuard{
 public:
-    ScopeGuard(std::function<void()> f):f(std::move(f)){
-
-    }
+    ScopeGuard(std::function<void()> f)
+    :f(std::move(f))
+    {}
 
     ~ScopeGuard(){
         if(f)

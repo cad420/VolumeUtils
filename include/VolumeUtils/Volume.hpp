@@ -2,6 +2,7 @@
 
 #define VOL_BEGIN namespace vol{
 #define VOL_END }
+
 // DEBUG
 #ifndef NDEBUG
 #define VOL_DEBUG
@@ -46,25 +47,29 @@ VOL_BEGIN
 
 #include "Volume.inl"
 
-class VolumeFileOpenError : public std::exception{
+class VolumeFileOpenError : public std::runtime_error{
 public:
-    VolumeFileOpenError(const std::string& errMsg) : std::exception(errMsg.c_str()){}
+    VolumeFileOpenError(const std::string& errMsg) : std::runtime_error(errMsg.c_str()){}
 };
 
-class VolumeFileContextError : public std::exception{
+class VolumeFileContextError : public std::runtime_error{
 public:
-    VolumeFileContextError(const std::string& errMsg) : std::exception(errMsg.c_str()){}
+    VolumeFileContextError(const std::string& errMsg) : std::runtime_error(errMsg.c_str()){}
 };
 
-enum class VoxelType :int{
+class VolumeCodecError : public std::runtime_error{
+    VolumeCodecError(const std::string& errMgs) : std::runtime_error(errMgs.c_str()) {}
+};
+
+enum class VoxelType : uint32_t{
     unknown = 0, uint8, uint16, float32
 };
 
-enum class VoxelFormat :int{
+enum class VoxelFormat : uint32_t{
     NONE = 0, R = 1, RG = 2, RGB = 3, RGBA = 4
 };
 
-inline constexpr bool IsVoxelTypeInteger(VoxelType type){
+inline constexpr bool IsVoxelTypeInteger(VoxelType type) noexcept {
     switch (type) {
         case VoxelType::uint8:
         case VoxelType::uint16: return true;
@@ -74,87 +79,35 @@ inline constexpr bool IsVoxelTypeInteger(VoxelType type){
     }
 }
 
-inline constexpr int GetVoxelSampleCount(VoxelFormat format) {
-    int nSamples = 0;
+inline constexpr int GetVoxelSampleCount(VoxelFormat format) noexcept {
     switch (format) {
-        case VoxelFormat::R:
-            nSamples = 1;
-            break;
-        case VoxelFormat::RG:
-            nSamples = 2;
-            break;
-        case VoxelFormat::RGB:
-            nSamples = 3;
-            break;
-        case VoxelFormat::RGBA:
-            nSamples = 4;
-            break;
-        default:
-            nSamples = 0;
+        case VoxelFormat::R: return 1;
+        case VoxelFormat::RG: return 2;
+        case VoxelFormat::RGB: return 3;
+        case VoxelFormat::RGBA: return 4;
+        default: return 0;
     }
-    return nSamples;
 }
 
-inline constexpr int GetVoxelBits(VoxelType type) {
-    int bits = 0;
+inline constexpr int GetVoxelBits(VoxelType type) noexcept {
     switch (type) {
-        case VoxelType::uint8:
-            bits = 8;
-            break;
-        case VoxelType::uint16:
-            bits = 16;
-            break;
-        case VoxelType::float32:
-            bits = 32;
-            break;
-        default:
-            bits = 0;
+        case VoxelType::uint8: return 8;
+        case VoxelType::uint16: return 16;
+        case VoxelType::float32: return 32;
+        default: return 0;
     }
-    return bits;
 }
 
-inline constexpr size_t GetVoxelSize(VoxelType type, VoxelFormat format) {
-    size_t size = 0;
-    switch (type) {
-        case VoxelType::uint8:
-            size = 1;
-            break;
-        case VoxelType::uint16:
-            size = 2;
-            break;
-        case VoxelType::float32:
-            size = 4;
-            break;
-        default:
-            break;
-    }
-    switch (format) {
-        case VoxelFormat::R:
-            size *= 1;
-            break;
-        case VoxelFormat::RG:
-            size *= 2;
-            break;
-        case VoxelFormat::RGB:
-            size *= 3;
-            break;
-        case VoxelFormat::RGBA:
-            size *= 4;
-            break;
-        default:
-            break;
-    }
-    return size;
+inline constexpr size_t GetVoxelSize(VoxelType type, VoxelFormat format) noexcept {
+    return GetVoxelBits(type) * GetVoxelSampleCount(format) >> 3;
 }
-
-
 
 struct VoxelSpace {
     float x = 1.f;
     float y = 1.f;
     float z = 1.f;
 
-    float voxel() const{
+    float voxel() const noexcept{
         return x * y * z;
     }
 
@@ -169,13 +122,11 @@ struct VoxelInfo{
     VoxelFormat format;
 };
 
-
-
-inline constexpr size_t GetVoxelSize(const VoxelInfo& info){
-    return GetVoxelSize(info.type,info.format);
+inline constexpr size_t GetVoxelSize(const VoxelInfo& info) noexcept {
+    return GetVoxelSize(info.type, info.format);
 }
 
-inline bool CheckValidation(const VoxelInfo& info){
+inline bool CheckValidation(const VoxelInfo& info) noexcept {
     return GetVoxelSize(info) != 0;
 }
 
@@ -191,9 +142,9 @@ struct Voxel<VoxelType::uint8, VoxelFormat::R> {
     using VoxelDataType = uint8_t;
     static constexpr VoxelType type = VoxelType::uint8;
     static constexpr VoxelFormat format = VoxelFormat::R;
-    static constexpr size_t size() { return 1; }
+    static constexpr size_t size() noexcept { return 1; }
 };
-using VoxelRU8 = Voxel<VoxelType::uint8,VoxelFormat::R>;
+using VoxelRU8 = Voxel<VoxelType::uint8, VoxelFormat::R>;
 static_assert(sizeof(VoxelRU8) == 1, "");
 
 template<>
@@ -205,16 +156,31 @@ struct Voxel<VoxelType::uint16, VoxelFormat::R> {
     using VoxelDataType = uint16_t;
     static constexpr VoxelType type = VoxelType::uint16;
     static constexpr VoxelFormat format = VoxelFormat::R;
-    static constexpr size_t size() { return 2; }
+    static constexpr size_t size() noexcept { return 2; }
 };
-using VoxelRU16 = Voxel<VoxelType::uint16,VoxelFormat::R>;
+using VoxelRU16 = Voxel<VoxelType::uint16, VoxelFormat::R>;
+static_assert(sizeof(VoxelRU16) == 2);
+
+template<>
+struct Voxel<VoxelType::float32, VoxelFormat::R> {
+    union {
+        float x = 0.f;
+        float r;
+    };
+    using VoxelDataType = float;
+    static constexpr VoxelType type = VoxelType::float32;
+    static constexpr VoxelFormat format = VoxelFormat::R;
+    static constexpr size_t size() noexcept { return 4; }
+};
+using VoxelRF32 = Voxel<VoxelType::float32, VoxelFormat::R>;
+static_assert(sizeof(VoxelRF32) == 4);
 
 struct Extend3D {
-    uint32_t width;
-    uint32_t height;
-    uint32_t depth;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t depth = 0;
 
-    size_t size() const {
+    size_t size() const noexcept {
         return static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth);
     }
 
@@ -223,7 +189,6 @@ struct Extend3D {
         return os;
     }
 };
-
 
 enum class VolumeType{
     Grid_RAW,
@@ -302,36 +267,18 @@ Register_VolumeTypeTraits(VolumeType::Grid_BLOCKED,BlockedGridVolume)
 Register_VolumeTypeTraits(VolumeType::Grid_ENCODED,EncodedGridVolume)
 Register_VolumeTypeTraits(VolumeType::Grid_BLOCKED_ENCODED,EncodedBlockedGridVolume)
 
-inline constexpr const char* VolumeTypeToStr(VolumeType type){
+inline constexpr const char* VolumeTypeToStr(VolumeType type) noexcept {
     switch (type) {
-        case VolumeType::Grid_RAW : return "Grid_RAW";
-        case VolumeType::Grid_SLICED : return "Grid_SLICED";
-        case VolumeType::Grid_BLOCKED : return "Grid_BLOCKED";
-        case VolumeType::Grid_ENCODED : return "Grid_ENCODED";
+        case VolumeType::Grid_RAW :             return "Grid_RAW";
+        case VolumeType::Grid_SLICED :          return "Grid_SLICED";
+        case VolumeType::Grid_BLOCKED :         return "Grid_BLOCKED";
+        case VolumeType::Grid_ENCODED :         return "Grid_ENCODED";
         case VolumeType::Grid_BLOCKED_ENCODED : return "Grid_BLOCKED_ENCODED";
-        default : return "Grid_UNKNOWN";
+        default :                               return "Grid_UNKNOWN";
     }
 }
 
-template<typename T>
-class VolumeHelper{
-public:
-    template<typename F>
-    T Map(F&& f) const noexcept {
-        return std::forward<T>(T::Map(std::forward<F>(f)));
-    }
-    template<typename F>
-    void MapInplace(F&& f) const noexcept{
-        T::MapInplace(std::forward<F>(f));
-    }
-//    using DescT = typename VolumeTypeTraits<typename T::VoxelT,T::EVolumeType>::DescT;
-    decltype(auto) GetVolumeDescT() const noexcept{
-        return T::GetVolumeDescT();
-    }
-
-};
-
-
+//TODO
 struct VolumeMemorySettings{
 public:
     inline static size_t MaxMemoryUsageBytes = 16ull << 30;
@@ -344,49 +291,46 @@ public:
 };
 
 template<typename Voxel>
-using TVolumeReadFunc = std::function<size_t(int dx, int dy, int dz, const Voxel& dst)>;
+using TVolumeReadFunc = std::function<void(int dx, int dy, int dz, const Voxel& dst)>;
 template<typename Voxel>
 using TVolumeWriteFunc = std::function<void(int dx, int dy, int dz, Voxel& dst)>;
-/**
- * @brief Memory model for volume.
- */
+
 template<typename Voxel>
 class VolumeInterface : public CVolumeInterface{
 public:
-
-
     /**
-     * @note Invalid params will not throw any exceptions and will just return 0.
-     * @return The number of voxels which are read successfully.
+     * @param buf ptr to buffer which will be filled
+     * @note dst must > src, and read region is [src, dst)
+     * @note throw on error
      */
-    virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept = 0;
+    virtual void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf)                      = 0;
 
-    virtual size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept = 0;
+    virtual void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader)   = 0;
 
-    virtual size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept = 0;
+    virtual void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf)               = 0;
 
-    virtual size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept = 0;
+    virtual void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) = 0;
 
-    virtual Voxel& operator()(int x, int y, int z) = 0;
+    virtual Voxel& operator()(int x, int y, int z)             = 0;
 
     virtual const Voxel& operator()(int x, int y, int z) const = 0;
 
     virtual VolumeType GetVolumeType() const noexcept = 0;
 
-    //...
 };
 
 
-using VolumeReadFunc = std::function<size_t(int dx, int dy, int dz, const void* src, size_t ele_size)>;
+using VolumeReadFunc  = std::function<void(int dx, int dy, int dz, const void* src, size_t ele_size)>;
 using VolumeWriteFunc = std::function<void(int dx, int dy, int dz, void* dst, size_t ele_size)>;
 
 class CVolumeReaderInterface{
 public:
     /**
-     * @param size memory buffer length for buf, maybe less than bytes count for the read region or more than are both ok.
+     * @note [src, dst)
      */
-    virtual size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept = 0;
-    virtual size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept = 0;
+    virtual void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             = 0;
+
+    virtual void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) = 0;
 };
 
 /**
@@ -395,14 +339,14 @@ public:
 template<typename VolumeDescT>
 class VolumeReaderInterface : public CVolumeReaderInterface{
 public:
-    virtual const VolumeDescT& GetVolumeDesc() const noexcept = 0;
+    virtual VolumeDescT GetVolumeDesc() const noexcept = 0;
 };
-
 
 class CVolumeWriterInterface{
 public:
-    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept = 0;
-    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept = 0;
+    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        = 0;
+
+    virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) = 0;
 };
 
 /**
@@ -411,20 +355,18 @@ public:
 template<typename VolumeDescT>
 class VolumeWriterInterface : public CVolumeWriterInterface{
 public:
-    virtual const VolumeDescT& GetVolumeDesc() const noexcept = 0;
+    virtual VolumeDescT GetVolumeDesc() const noexcept = 0;
 };
 
-inline constexpr const char* InvalidVolumeName = "InvalidVolume";
+inline constexpr const char* InvalidVolumeName = "INVALID_VOLUME";
 
 struct VolumeDesc{
-    // empty is not invalid
-    std::string volume_name;
-    // raw data file path
+    std::string volume_name = "default";
     std::string data_path;
     VoxelInfo voxel_info;
 };
 
-inline bool CheckValidation(const VolumeDesc& desc){
+inline bool CheckValidation(const VolumeDesc& desc) noexcept {
     return desc.volume_name != InvalidVolumeName
     && CheckValidation(desc.voxel_info);
 }
@@ -434,7 +376,7 @@ struct RawGridVolumeDesc : VolumeDesc{
     VoxelSpace space;
 };
 
-inline bool CheckValidation(const RawGridVolumeDesc& desc){
+inline bool CheckValidation(const RawGridVolumeDesc& desc) noexcept {
     if(!CheckValidation(static_cast<const VolumeDesc&>(desc))) return false;
     return desc.extend.size() > 0 && desc.space.voxel() > 0.f;
 }
@@ -444,7 +386,7 @@ inline bool CheckValidation(const RawGridVolumeDesc& desc){
  */
 class RawGridVolumePrivate;
 template<typename Voxel>
-class RawGridVolume : public VolumeInterface<Voxel>, public VolumeHelper<RawGridVolume<Voxel>>{
+class RawGridVolume : public VolumeInterface<Voxel>{
 public:
     using VoxelT = Voxel;
     using SelfT = RawGridVolume<Voxel>;
@@ -454,37 +396,26 @@ public:
 
     ~RawGridVolume();
 
+    RawGridVolumeDesc GetVolumeDesc() const noexcept;
+
 public:
     /**
-     * @param size voxel expected read count for buf.
-     * @return exactly voxel read count.
+     * @param buf ptr to buffer which will be filled, must large than read region
+     * @note [src, dst)
      */
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept override;
+    void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf)                      override;
 
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept override;
+    void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader)   override;
 
-    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept override;
+    void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf)               override;
 
-    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept override;
+    void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) override;
 
     Voxel& operator()(int x,int y,int z) override;
 
     const Voxel& operator()(int x,int y,int z) const override;
 
     VolumeType GetVolumeType() const noexcept override;
-public:
-    // help functions
-    template<typename F>
-    SelfT Map(F&& f) const noexcept{
-        NOT_IMPL
-    }
-
-    template<typename F>
-    void MapInplace(F&& f) noexcept{
-        NOT_IMPL
-    }
-
-    const RawGridVolumeDesc& GetVolumeDesc() const;
 
 public:
     Voxel* GetRawDataPtr() noexcept;
@@ -504,18 +435,18 @@ class RawGridVolumeReaderPrivate;
 class RawGridVolumeReader : public VolumeReaderInterface<RawGridVolumeDesc>{
 public:
     /**
-     * @param filename descriptor json file path
+     * @param filename descriptor json file path, end with ".raw.desc.json"
      */
     explicit RawGridVolumeReader(const std::string& filename);
 
     ~RawGridVolumeReader();
 
 public:
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) override;
 
-    const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    RawGridVolumeDesc GetVolumeDesc() const noexcept override;
 
 protected:
     std::unique_ptr<RawGridVolumeReaderPrivate> _;
@@ -529,27 +460,26 @@ public:
     ~RawGridVolumeWriter();
 
 public:
-    const RawGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    RawGridVolumeDesc GetVolumeDesc() const noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) override;
 
 protected:
     std::unique_ptr<RawGridVolumeWriterPrivate> _;
 };
 
-
 enum class SliceAxis : int {
-    AXIS_X = 0,AXIS_Y = 1,AXIS_Z = 2
+    AXIS_X = 0, AXIS_Y = 1, AXIS_Z = 2
 };
 
 struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     SliceAxis axis = SliceAxis::AXIS_Z;
-    mutable std::function<std::string(uint32_t)> name_generator;
     std::string prefix;
     std::string postfix;
     int setw = 0;
+    mutable std::function<std::string(uint32_t)> name_generator;
     bool overwrite = true;
     void Generate() const noexcept {
         name_generator = [this](uint32_t idx){
@@ -560,13 +490,13 @@ struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     }
 };
 
-inline bool CheckValidation(SliceAxis axis){
+inline bool CheckValidation(SliceAxis axis) noexcept {
     return axis == SliceAxis::AXIS_X
-    || axis == SliceAxis::AXIS_Y
-    || axis == SliceAxis::AXIS_Z;
+        || axis == SliceAxis::AXIS_Y
+        || axis == SliceAxis::AXIS_Z;
 }
 
-inline bool CheckValidation(const SlicedGridVolumeDesc& desc){
+inline bool CheckValidation(const SlicedGridVolumeDesc& desc) noexcept {
     if(!CheckValidation(static_cast<const RawGridVolumeDesc&>(desc))) return false;
     return CheckValidation(desc.axis) && desc.setw >= 0;
 }
@@ -583,49 +513,51 @@ public:
 
     ~SlicedGridVolume();
 
+    SlicedGridVolumeDesc GetVolumeDesc() const noexcept;
+
 public:
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf, size_t size) noexcept override;
+    void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, Voxel *buf)                      override;
 
-    size_t ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader) noexcept override;
+    void ReadVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeReadFunc<Voxel> reader)   override;
 
-    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf, size_t size) noexcept override;
+    void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const Voxel *buf)               override;
 
-    size_t WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) noexcept override;
+    void WriteVoxels(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, TVolumeWriteFunc<Voxel> writer) override;
 
     Voxel& operator()(int x, int y, int z) override;
 
     const Voxel& operator()(int x, int y, int z) const override;
 
 public:
-    virtual size_t ReadSlice(SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
+    virtual void ReadSlice(SliceAxis axis, int sliceIndex, void* buf);
 
-    virtual size_t ReadSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, void* buf, size_t size) noexcept;
+    virtual void ReadSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, void* buf);
 
-    virtual size_t WriteSlice(SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
+    virtual void WriteSlice(SliceAxis axis, int sliceIndex, const void* buf);
 
-    virtual size_t WriteSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, const void* buf, size_t size) noexcept;
+    virtual void WriteSlice(int srcX, int srcY, int dstX, int dstY, SliceAxis axis, int sliceIndex, const void* buf);
 
 protected:
     std::unique_ptr<SlicedGridVolumePrivate> _;
 };
 
-using SliceReadFunc = std::function<size_t(int dx, int dy, const void* src, size_t ele_size)>;
+using SliceReadFunc = std::function<void(int dx, int dy, const void* src, size_t ele_size)>;
 using SliceWriteFunc = std::function<void(int dx, int dy, void* dst, size_t ele_size)>;
 class SlicedGridVolumeReaderPrivate;
 class SlicedGridVolumeReader : public VolumeReaderInterface<SlicedGridVolumeDesc>{
 public:
 
-    SlicedGridVolumeReader(const std::string& filename) noexcept(false);
+    SlicedGridVolumeReader(const std::string& filename);
 
     ~SlicedGridVolumeReader();
 
 public:
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf) override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) override;
 
-    const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    SlicedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
 public:
     /**
@@ -636,24 +568,25 @@ public:
      * @param size buffer length for buf.
      * @return bytes count filled into the buf.
      */
-    size_t ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, void* buf, size_t size) noexcept;
+    void ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, void* buf);
 
     /**
      * @brief This method is mainly to read slice data store/map to a non-linear buffer.
      */
-    size_t ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadFunc reader) noexcept;
+    void ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadFunc reader);
 
-    size_t ReadSliceData(int sliceIndex, void* buf, size_t size) noexcept;
+    void ReadSliceData(int sliceIndex, void* buf);
 
-    size_t ReadSliceData(int sliceIndex, SliceReadFunc reader) noexcept;
+    void ReadSliceData(int sliceIndex, SliceReadFunc reader);
+
     /**
      * @brief If set use cached, reader will first try to read data from cache buffer and read entire slice if can,
      * so it will cost more memory if random access but will be more efficient for read by sequence for huge volume data.
      * @note Internal implement for cache is simple, user can turn off cache and create cache by user self.
      */
-    void SetUseCached(bool useCached);
+    void SetUseCached(bool useCached) noexcept;
 
-    bool GetIfUseCached() const;
+    bool GetIfUseCached() const noexcept;
 
 protected:
     std::unique_ptr<SlicedGridVolumeReaderPrivate> _;
@@ -667,23 +600,22 @@ public:
     ~SlicedGridVolumeWriter();
 
 public:
+    SlicedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
-    const SlicedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
-
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) override;
 
 public:
-    void WriteSliceData(int sliceIndex, const void* buf, size_t size) noexcept;
+    void WriteSliceData(int sliceIndex, const void* buf);
 
-    void WriteSliceData(int sliceIndex, SliceWriteFunc writer) noexcept;
+    void WriteSliceData(int sliceIndex, SliceWriteFunc writer);
 
-    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, const void* buf, size_t size) noexcept;
+    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, const void* buf);
 
-    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceWriteFunc writer) noexcept;
+    void WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceWriteFunc writer);
 
-    void Flush() noexcept;
+    void Flush();
 
 protected:
     std::unique_ptr<SlicedGridVolumeWriterPrivate> _;
@@ -699,9 +631,9 @@ struct BlockIndex {
 };
 
 struct BlockedGridVolumeDesc : RawGridVolumeDesc{
-    uint32_t block_length;
+    uint32_t block_length = 0;
     // physical stored block size = block_length + 2 * padding
-    uint32_t padding;
+    uint32_t padding = 0;
 };
 
 /**
@@ -717,9 +649,9 @@ public:
 
     void ReadBlockData(const BlockIndex&, VoxelT* buf);
 
-    Voxel* GetRawBlockData(const BlockIndex&) noexcept;
+    Voxel* GetRawBlockData(const BlockIndex&);
 
-    const Voxel* GetRawBlockData(const BlockIndex&) const noexcept;
+    const Voxel* GetRawBlockData(const BlockIndex&) const;
 
 protected:
     std::unique_ptr<BlockedGridVolumePrivate> _;
@@ -736,16 +668,16 @@ public:
     ~BlockedGridVolumeReader();
 
 public:
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) override;
 
-    const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    BlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
 public:
-    size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
+    void ReadBlockData(const BlockIndex& blockIndex, void* buf);
 
-    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
+    void ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader);
 
 protected:
     std::unique_ptr<BlockedGridVolumeReaderPrivate> _;
@@ -762,16 +694,16 @@ public:
     ~BlockedGridVolumeWriter();
 
 public:
-    const BlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    BlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) override;
 
 public:
-    void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, const void* buf);
 
-    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer);
 
 protected:
     std::unique_ptr<BlockedGridVolumeWriterPrivate> _;
@@ -814,16 +746,16 @@ public:
     ~EncodedGridVolumeReader();
 
 public:
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) override;
 
-    const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    EncodedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
 public:
-    size_t ReadEncodedData(void* buf, size_t size) noexcept;
+    size_t ReadEncodedData(void* buf, size_t size);
 
-    size_t ReadEncodedData(Packets& packets) noexcept;
+    size_t ReadEncodedData(Packets& packets);
 
 protected:
     std::unique_ptr<EncodedGridVolumeReaderPrivate> _;
@@ -840,16 +772,16 @@ public:
     ~EncodedGridVolumeWriter();
 
 public:
-    const EncodedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    EncodedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) override;
 
 public:
-    void WriteEncodedData(const void* buf, size_t size) noexcept;
+    void WriteEncodedData(const void* buf, size_t size);
 
-    void WriteEncodedData(const Packets& packets) noexcept;
+    void WriteEncodedData(const Packets& packets);
 
 protected:
     std::unique_ptr<EncodedGridVolumeWriterPrivate> _;
@@ -896,34 +828,34 @@ public:
     ~EncodedBlockedGridVolumeReader();
 
 public:
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf, size_t size) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
 
-    size_t ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) noexcept override;
+    void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) override;
 
-    const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    EncodedBlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
 public:
     /**
      * @brief Read one block data into buf with size, it will use default(cpu) and suit codec for decoding.
      */
-    size_t ReadBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
+    void ReadBlockData(const BlockIndex& blockIndex, void* buf);
 
     /**
      * @brief This may be some slow but support more freedom.
      */
-    size_t ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader) noexcept;
+    void ReadBlockData(const BlockIndex& blockIndex, VolumeReadFunc reader);
 
     /**
      * @param size should greater to equal to block bytes.
      * @note read data format is : [(packet_size)(packet_data)][(packet_size)(packet_data)]...
      * @return Exactly filled byte count.
      */
-    size_t ReadEncodedBlockData(const BlockIndex& blockIndex, void* buf, size_t size) noexcept;
+    size_t ReadEncodedBlockData(const BlockIndex& blockIndex, void* buf, size_t size);
 
     /**
-     * @return packets' bytes count
+     * @return packed packets bytes
      */
-    size_t ReadEncodedBlockData(const BlockIndex& blockIndex, Packets& packets) noexcept;
+    size_t ReadEncodedBlockData(const BlockIndex& blockIndex, Packets& packets);
 
 private:
     std::unique_ptr<EncodedBlockedGridVolumeReaderPrivate> _;
@@ -940,28 +872,27 @@ public:
     ~EncodedBlockedGridVolumeWriter();
 
 public:
-    const EncodedBlockedGridVolumeDesc& GetVolumeDesc() const noexcept override;
+    EncodedBlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
 
     /**
      * @brief this method will recover blocks between src and dst region, so tack care of it.
      */
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf, size_t size) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        override;
 
-    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) noexcept override;
+    void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) override;
 
 public:
-    void WriteBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, const void* buf);
 
-    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer) noexcept;
+    void WriteBlockData(const BlockIndex& blockIndex, VolumeWriteFunc writer);
 
-    void WriteEncodedBlockData(const BlockIndex& blockIndex, const void* buf, size_t size) noexcept;
+    void WriteEncodedBlockData(const BlockIndex& blockIndex, const void* buf, size_t size);
 
-    void WriteEncodedBlockData(const BlockIndex& blockIndex, const Packets& packets) noexcept;
+    void WriteEncodedBlockData(const BlockIndex& blockIndex, const Packets& packets);
 
 private:
     std::unique_ptr<EncodedBlockedGridVolumeWriterPrivate> _;
 };
-
 
 enum class CodecDevice {
     CPU, GPU
@@ -996,27 +927,37 @@ public:
     virtual CodecDevice GetCodecDevice() const noexcept = 0;
 
     /**
+     * @note throw on error
      * @note These infos may be not enough so we need derived this interface with template class with Voxel info.
+     * @return encoded packets' packed size
      */
-    virtual bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept = 0;
+    virtual size_t Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) = 0;
 
-    virtual bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept = 0;
+    /**
+     * @note throw on error
+     * @note buf' size should be enough large for decoding
+     * return decoded buffer size
+     */
+    virtual size_t Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size)  = 0;
 
 };
-
 
 template<typename T>
 class VolumeCodecInterface : public CVolumeCodecInterface{
 public:
     virtual ~VolumeCodecInterface() = default;
 
-    virtual size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) = 0;
+    /**
+     * @param size buffer's size
+     * @return encoded bytes
+     */
+    virtual size_t Encode(const std::vector<SliceDataView<T>>& slices, void* buf, size_t size)   = 0;
 
-    virtual size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) = 0;
+    virtual size_t Encode(const GridDataView<T>& volume, SliceAxis axis, void* buf, size_t size) = 0;
 
-    virtual bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) = 0;
+    virtual size_t Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets)         = 0;
 
-    virtual bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) = 0;
+    virtual size_t Encode(const GridDataView<T>& volume, SliceAxis axis, Packets &packets)       = 0;
 
 };
 
@@ -1041,7 +982,7 @@ class VolumeVideoCodec;
 
 class CPUVolumeVideoCodecPrivate;
 template<typename T>
-class VolumeVideoCodec<T,CodecDevice::CPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>
+class VolumeVideoCodec<T, CodecDevice::CPU, std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
     explicit VolumeVideoCodec(int threadCount = 1);
@@ -1050,18 +991,18 @@ public:
         return CodecDevice::CPU;
     }
 
-    bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept override;
+    size_t Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) override;
 
-    bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept override;
+    size_t Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) override;
 
 public:
-    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) override;
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size)  override;
 
     size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) override;
 
-    bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) override;
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets)        override;
 
-    bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) override;
+    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets)       override;
 
 protected:
     std::unique_ptr<CPUVolumeVideoCodecPrivate> _;
@@ -1070,13 +1011,11 @@ protected:
 template<typename T>
 using CPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::CPU, std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::CPU>>>;
 
-
 class GPUVolumeVideoCodecPrivate;
 template<typename T>
-class VolumeVideoCodec<T,CodecDevice::GPU,std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>
+class VolumeVideoCodec<T, CodecDevice::GPU, std::enable_if_t<VoxelVideoCodecV<T,CodecDevice::GPU>>>
         : public VolumeVideoCodecInterface<T>{
 public:
-    // will create own's new cuda context
     explicit VolumeVideoCodec(int GPUIndex = 0);
 
     /**
@@ -1088,30 +1027,21 @@ public:
         return CodecDevice::GPU;
     }
 
-    /**
-     * @param buf cpu or gpu ptr are both ok
-     */
-    bool Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) noexcept override;
+    size_t Encode(const Extend3D& extend, const void* buf, size_t size, Packets& packets) override;
 
-    /**
-     * @param buf cpu or gpu ptr are both ok
-     */
-    bool Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) noexcept override;
+    size_t Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size) override;
 
 public:
     /**
      * @param buf only support cpu ptr now, maybe support device ptr next version...
      */
-    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size) noexcept override;
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, void* buf, size_t size)  override;
 
-    /**
-     * @param buf only support cpu ptr now, maybe support device ptr next version...
-     */
-    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) noexcept override;
+    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, void* buf, size_t size) override;
 
-    bool Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) noexcept override;
+    size_t Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets)        override;
 
-    bool Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets) noexcept override;
+    size_t Encode(const GridDataView<T>& volume,SliceAxis axis, Packets &packets)       override;
 
 protected:
     std::unique_ptr<GPUVolumeVideoCodecPrivate> _;
@@ -1122,8 +1052,7 @@ using GPUVolumeVideoCodec = VolumeVideoCodec<T, CodecDevice::GPU, std::enable_if
 
 
 struct VolumeFileDesc{
-
-    void Set(VolumeType type, const VolumeFileDesc& desc){
+    void Set(VolumeType type, const VolumeFileDesc& desc) noexcept {
         if(type == VolumeType::Grid_RAW)
             raw_desc = desc.raw_desc;
         else if(type == VolumeType::Grid_SLICED)
@@ -1137,10 +1066,9 @@ struct VolumeFileDesc{
         Set(type);
     }
 
-    void Set(VolumeType vol_type){
+    void Set(VolumeType vol_type) noexcept {
         this->volume_type = vol_type;
     }
-
 
     VolumeType volume_type = VolumeType::Grid_RAW;
 
@@ -1149,10 +1077,9 @@ struct VolumeFileDesc{
     BlockedGridVolumeDesc blocked_desc;
     EncodedGridVolumeDesc encoded_desc;
     EncodedBlockedGridVolumeDesc encoded_blocked_desc;
-
 };
 
-inline bool CheckValidation(const VolumeFileDesc& desc, VolumeType type){
+inline bool CheckValidation(const VolumeFileDesc& desc, VolumeType type) noexcept {
     switch (type) {
         case VolumeType::Grid_RAW             : return CheckValidation(desc.raw_desc);
         case VolumeType::Grid_SLICED          : return CheckValidation(desc.sliced_desc);
@@ -1190,8 +1117,6 @@ public:
 
     }
 };
-
-
 
 /**
  * @note Volume model created by *IOWrapper will be associated with file.
@@ -1272,7 +1197,6 @@ public:
 
 };
 
-
 VOL_END
 
 template<>
@@ -1284,7 +1208,6 @@ struct std::hash<vol::BlockIndex>{
         return a ^ (b + 0x9e3779b97f4a7c15LL + (c << 6) + (c >> 2));
     }
 };
-
 
 // imply template class VolumeVideoCodec
 VOL_BEGIN
@@ -1318,6 +1241,11 @@ public:
      */
     virtual void EncodeFrameIntoPackets(const void* buf, size_t size, Packets& packets) = 0;
 
+    /**
+     * @param buf start ptr for buffer to decode into
+     * @param size buffer size for buf, must be large enough
+     * @return decoded size for decoding
+     */
     virtual size_t DecodePacketIntoFrames(const Packet& packet, void* buf, size_t size) = 0;
 };
 
@@ -1335,7 +1263,7 @@ CPUVolumeVideoCodec<T>::VolumeVideoCodec(int threadCount) {
 }
 
 template<typename T>
-bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) noexcept {
+size_t CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) {
     auto [w, h, d] = extend;
     VideoCodec::CodecParams params{
             (int)w,(int)h,(int)d,
@@ -1343,7 +1271,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
             GetVoxelBits(T::type),
             _->thread_count
     };
-    if(!_->video_codec->ReSet(params)) return false;
+    if(!_->video_codec->ReSet(params)) return 0;
     GridView<T> data_view(w, h, d, reinterpret_cast<const T*>(buf));
     auto voxel_size = GetVoxelSize(T::type, T::format);
     const size_t slice_size = w * d * voxel_size;
@@ -1362,7 +1290,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
 }
 
 template<typename T>
-bool CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) noexcept {
+size_t CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) {
     if(!buf || !size) return false;
 
     auto voxel_size = GetVoxelSize(T::type, T::format);
@@ -1465,7 +1393,7 @@ size_t CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis a
 }
 
 template<typename T>
-bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) {
+size_t CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) {
     // SliceDataView' storage maybe not linear because of map
     auto voxel_size = T::size();
     auto width = slices.front().Width();
@@ -1501,7 +1429,7 @@ bool CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
 }
 
 template<typename T>
-bool CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) {
+size_t CPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) {
     GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
     if(axis == SliceAxis::AXIS_Z){
         for(uint32_t z = 0; z < grid.Depth(); z++){
@@ -1564,7 +1492,7 @@ GPUVolumeVideoCodec<T>::VolumeVideoCodec(void *context) {
 }
 
 template<typename T>
-bool GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) noexcept {
+size_t GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) {
     auto [w, h, d] = extend;
     VideoCodec::CodecParams params{
             (int)w, (int)h,(int)d,
@@ -1592,7 +1520,7 @@ bool GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, siz
 }
 
 template<typename T>
-bool GPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) noexcept {
+size_t GPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) {
     if(!buf || !size) return false;
 
     auto voxel_size = GetVoxelSize(T::type, T::format);
@@ -1619,7 +1547,7 @@ bool GPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packe
 }
 
 template<typename T>
-size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, void *buf, size_t size) noexcept {
+size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, void *buf, size_t size) {
     if(slices.empty() || !buf || !size) return 0;
     Packets packets;
     auto ret = Encode(slices, packets);
@@ -1642,7 +1570,7 @@ size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slice
 }
 
 template<typename T>
-size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) noexcept {
+size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, void *buf, size_t size) {
     GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
     if(axis == SliceAxis::AXIS_Z){
         for(uint32_t z = 0; z < grid.Depth(); z++){
@@ -1694,7 +1622,7 @@ size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis a
 }
 
 template<typename T>
-bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) noexcept {
+size_t GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, Packets &packets) {
     auto voxel_size = T::size();
     auto width = slices.front().sizeX;
     auto height = slices.front().sizeY;
@@ -1731,7 +1659,7 @@ bool GPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices,
 }
 
 template<typename T>
-bool GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) noexcept {
+size_t GPUVolumeVideoCodec<T>::Encode(const GridDataView<T> &volume, SliceAxis axis, Packets &packets) {
     GridData<T> grid(volume.Width(), volume.Height(), volume.Depth());
     if(axis == SliceAxis::AXIS_Z){
         for(uint32_t z = 0; z < grid.Depth(); z++){

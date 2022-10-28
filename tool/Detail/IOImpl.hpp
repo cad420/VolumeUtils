@@ -61,7 +61,7 @@ struct IOImpl {
                                        range.dst_x + padding + 1,
                                        range.src_y + (y_turn + 1) * block_length + padding + 1,
                                        range.src_z + (z_turn + 1) * block_length + padding + 1,
-                                       grid.GetRawDataPtr(), grid_extend.size() * sizeof(Voxel));
+                                       grid.GetRawDataPtr());
                 // write grid's blocks into file
                 for (int x_turn = 0; x_turn < x_block_count; x_turn++) {
                     std::cout << "write block : (" << x_turn << ", " << y_turn << ", " << z_turn << ")" << std::endl;
@@ -159,7 +159,7 @@ struct IOImpl {
             bool is_even = (z - range.src_z) % 2;
             auto slice_buffer_ptr = reinterpret_cast<Voxel *>(grid.GetRawDataPtr() + slice_w * slice_h * int(is_even));
             reader->ReadVolumeData(range.src_x, range.src_y, z, range.dst_x, range.dst_y, z + 1,
-                                   slice_buffer_ptr, slice_bytes);
+                                   slice_buffer_ptr);
 
             if (!is_even) continue;
 

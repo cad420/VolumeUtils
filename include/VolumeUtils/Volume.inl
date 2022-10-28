@@ -1,19 +1,4 @@
-
-enum class FileAccess{
-    Read,
-    Write,
-    ReadWrite
-};
-
-enum class MapAccess{
-    ReadOnly,
-    ReadWrite
-};
-
-class IMappingFile{
-public:
-
-};
+#pragma once
 
 template<typename,bool>
 class GridDataView;
