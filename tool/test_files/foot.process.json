@@ -29,9 +29,9 @@
         "operations": {
           "down_sampling": "no",
           "down_sampling_method": "max",
-          "statistics": "yes",
+          "statistics": "no",
           "statistics_filename": "genfoot.encoded_blocked.ss.json",
-          "mapping": "yes",
+          "mapping": "no",
           "mapping_ops": {
             "add": 6,
             "mul": 2
@@ -57,9 +57,9 @@
         "operations": {
           "down_sampling": "yes",
           "down_sampling_method": "max",
-          "statistics": "yes",
+          "statistics": "no",
           "statistics_filename": "gen_foot_lod1.sliced.ss.json",
-          "mapping": "yes",
+          "mapping": "no",
           "mapping_ops": {
             "add": 1
           }
@@ -93,9 +93,9 @@
         "operations": {
           "down_sampling": "no",
           "down_sampling_method": "max",
-          "statistics": "yes",
+          "statistics": "no",
           "statistics_filename": "genfoot.encoded_blocked.ss.json",
-          "mapping": "yes",
+          "mapping": "no",
           "mapping_ops": {
             "add": 6,
             "mul": 2
@@ -121,9 +121,9 @@
         "operations": {
           "down_sampling": "yes",
           "down_sampling_method": "max",
-          "statistics": "yes",
+          "statistics": "no",
           "statistics_filename": "gen_foot_lod2.sliced.ss.json",
-          "mapping": "yes",
+          "mapping": "no",
           "mapping_ops": {
             "add": 1
           }

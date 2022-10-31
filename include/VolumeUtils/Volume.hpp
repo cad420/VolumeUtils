@@ -57,7 +57,13 @@ public:
     VolumeFileContextError(const std::string& errMsg) : std::runtime_error(errMsg.c_str()){}
 };
 
+class VolumeFileIOError : public std::runtime_error{
+public:
+    VolumeFileIOError(const std::string& errMsg) : std::runtime_error(errMsg.c_str()){}
+};
+
 class VolumeCodecError : public std::runtime_error{
+public:
     VolumeCodecError(const std::string& errMgs) : std::runtime_error(errMgs.c_str()) {}
 };
 
@@ -484,7 +490,7 @@ struct SlicedGridVolumeDesc : RawGridVolumeDesc{
     void Generate() const noexcept {
         name_generator = [this](uint32_t idx){
             std::stringstream ss;
-            ss << prefix << std::setw(setw) << std::setfill('0') << std::to_string(idx) << postfix;
+            ss << prefix << std::setw(setw) << std::setfill('0') << std::to_string(idx + 1) << postfix;
             return ss.str();
         };
     }
@@ -940,6 +946,7 @@ public:
      */
     virtual size_t Decode(const Extend3D &extend, const Packets &packets, void* buf, size_t size)  = 0;
 
+    //TODO 使用 void* + size_t 替代 Packets
 };
 
 template<typename T>
@@ -1226,6 +1233,18 @@ public:
         bool encode = true;
         int device_index = 0;
         void* context = nullptr;
+        friend std::ostream& operator<<(std::ostream& os, const CodecParams& params){
+            os << "CodecParams Info :"
+            << "\tframe_w : " << params.frame_w
+            << "\tframe_h : " << params.frame_h
+            << "\tframe_n : " << params.frame_n
+            << "\t samplers_per_pixel : " << params.samplers_per_pixel
+            << "\t bits_per_sampler : " << params.bits_per_sampler
+            << "\t encode : " << params.encode
+            << "\t device_index : " << params.device_index
+            << "\t context : " << params.context;
+            return os;
+        }
     };
 
     static std::unique_ptr<VideoCodec> Create(CodecDevice device);
@@ -1262,47 +1281,60 @@ CPUVolumeVideoCodec<T>::VolumeVideoCodec(int threadCount) {
     _->thread_count = threadCount;
 }
 
+// ===================
+// 主要使用的两个接口函数
 template<typename T>
 size_t CPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, size_t size, Packets &packets) {
     auto [w, h, d] = extend;
     VideoCodec::CodecParams params{
-            (int)w,(int)h,(int)d,
-            GetVoxelSampleCount(T::format),
-            GetVoxelBits(T::type),
-            _->thread_count
+            .frame_w = (int)w,
+            .frame_h = (int)h,
+            .frame_n = (int)d,
+            .samplers_per_pixel = GetVoxelSampleCount(T::format),
+            .bits_per_sampler = GetVoxelBits(T::type),
+            .threads_count = _->thread_count
     };
-    if(!_->video_codec->ReSet(params)) return 0;
-    GridView<T> data_view(w, h, d, reinterpret_cast<const T*>(buf));
+    if(!_->video_codec->ReSet(params)){
+        std::cerr << "Invalid Video CodecParams, " << params << std::endl;
+        throw VolumeCodecError("CPU video encode reset failed");
+    }
+
+    auto src_ptr = reinterpret_cast<const uint8_t*>(buf);
     auto voxel_size = GetVoxelSize(T::type, T::format);
-    const size_t slice_size = w * d * voxel_size;
-    // only encode buf with size
-    d = size / slice_size;
+    const size_t slice_size = w * h * voxel_size;
+    assert(size == (size_t)w * h * d * voxel_size);
+    size_t packed_size = 0;
     for(int z = 0; z < d + 1; z++){
         Packets tmp_packets;
-        if(z < d)
-            _->video_codec->EncodeFrameIntoPackets(&data_view.At(0, 0, z), slice_size, tmp_packets);
+        if(z < d){
+            size_t src_offset = (size_t)z * slice_size;
+            _->video_codec->EncodeFrameIntoPackets(src_ptr + src_offset, slice_size, tmp_packets);
+        }
         else
             // one more for end
             _->video_codec->EncodeFrameIntoPackets(nullptr, 0, tmp_packets);
+        for(auto& p : tmp_packets)
+            packed_size += p.size() + sizeof(size_t);
         packets.insert(packets.end(), tmp_packets.begin(), tmp_packets.end());
     }
-    return true;
+    return packed_size;
 }
 
 template<typename T>
 size_t CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &packets, void *buf, size_t size) {
-    if(!buf || !size) return false;
+    assert(buf && size && !packets.empty());
 
     auto voxel_size = GetVoxelSize(T::type, T::format);
-    if(extend.size() * voxel_size > size){
-        throw std::runtime_error("target decode buffer size is not enough large!");
-    }
-    // cpp20
+    assert(extend.size() * voxel_size <= size);
+
     VideoCodec::CodecParams params{
         .threads_count = _->thread_count,
         .encode = false
     };
-    if(!_->video_codec->ReSet(params)) return false;
+    if(!_->video_codec->ReSet(params)){
+        std::cerr << "Invalid Video CodecParams, " << params << std::endl;
+        throw VolumeCodecError("CPU video decode reset failed");
+    }
 
     auto dst_ptr = reinterpret_cast<uint8_t*>(buf);
     size_t decode_size = 0;
@@ -1313,9 +1345,12 @@ size_t CPUVolumeVideoCodec<T>::Decode(const Extend3D &extend, const Packets &pac
     // one more for end
     auto ret = _->video_codec->DecodePacketIntoFrames({}, dst_ptr + decode_size, size - decode_size);
     decode_size += ret;
-
-    return true;
+    if(decode_size > size){
+        throw VolumeCodecError("CPU volume video decode error : target decode buffer size is not enough large!");
+    }
+    return decode_size;
 }
+// ===================
 
 template<typename T>
 size_t CPUVolumeVideoCodec<T>::Encode(const std::vector<SliceDataView<T>> &slices, void *buf, size_t size) {
@@ -1505,9 +1540,8 @@ size_t GPUVolumeVideoCodec<T>::Encode(const Extend3D &extend, const void *buf, s
     if(!_->video_codec->ReSet(params)) return false;
     GridDataView<T> data_view(w, h, d, buf);
     auto voxel_size = GetVoxelSize(T::type, T::format);
-    const size_t slice_size = w * d * voxel_size;
-    // only encode buf with size
-    d = size / slice_size;
+    const size_t slice_size = w * h * voxel_size;
+    assert(size == slice_size * d);
     for(int z = 0; z < d + 1; z++){
         Packets tmp_packets;
         if(z < d)

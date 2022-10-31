@@ -38,7 +38,7 @@ namespace{
         std::string tif_filename;
         SliceInfo tif_slice_info;
         TIFF* tif = nullptr;
-        std::vector<uint8_t> scanline_buffer;
+//        std::vector<uint8_t> scanline_buffer;
     public:
         TIFIOWrapper() = default;
 
@@ -83,17 +83,17 @@ namespace{
 
         void SetSliceInfo(const SliceInfo& slice_info) noexcept override{
             tif_slice_info = slice_info;
-            scanline_buffer.resize(slice_info.width * slice_info.bits_per_sampler * slice_info.samplers_per_pixel / 8);
+//            scanline_buffer.resize(slice_info.width * slice_info.bits_per_sampler * slice_info.samplers_per_pixel / 8);
             if(!tif) return;
-            TIFFSetField(tif, TIFFTAG_ORIENTATION,  ORIENTATION_TOPLEFT);
-            TIFFSetField(tif, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_MINISBLACK);
-            TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
-            TIFFSetField(tif, TIFFTAG_IMAGEWIDTH,      tif_slice_info.width);
-            TIFFSetField(tif, TIFFTAG_IMAGELENGTH,     tif_slice_info.height);
-            TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, tif_slice_info.samplers_per_pixel);
-            TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE,   tif_slice_info.bits_per_sampler);
-            TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP,    tif_slice_info.rows_per_strip);
-            TIFFSetField(tif, TIFFTAG_COMPRESSION,     tif_slice_info.compressed ? COMPRESSION_LZW : COMPRESSION_NONE);
+            auto ret = TIFFSetField(tif, TIFFTAG_ORIENTATION,  ORIENTATION_TOPLEFT);
+            ret = TIFFSetField(tif, TIFFTAG_PHOTOMETRIC,  PHOTOMETRIC_MINISBLACK);
+            ret = TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+            ret = TIFFSetField(tif, TIFFTAG_IMAGEWIDTH,      tif_slice_info.width);
+            ret = TIFFSetField(tif, TIFFTAG_IMAGELENGTH,     tif_slice_info.height);
+            ret = TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, tif_slice_info.samplers_per_pixel);
+            ret = TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE,   tif_slice_info.bits_per_sampler);
+            ret = TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP,    tif_slice_info.rows_per_strip);
+            ret = TIFFSetField(tif, TIFFTAG_COMPRESSION,     tif_slice_info.compressed ? COMPRESSION_LZW : COMPRESSION_NONE);
         }
 
         size_t Read(void* buf, size_t size) override{
@@ -303,6 +303,7 @@ SlicedGridVolumeReader::~SlicedGridVolumeReader() {
 }
 
 void SlicedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf) {
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
     return ReadVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
@@ -311,13 +312,24 @@ void SlicedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int ds
         size_t dst_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
         copy_func(reinterpret_cast<const uint8_t*>(src), dst_ptr + dst_offset);
     });
+#else
+    int beg_z = std::max<int>(0, srcZ);
+    int end_z = std::min<int>(_->desc.extend.depth, dstZ);
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    for(int slice_index = beg_z; slice_index < end_z; slice_index++) {
+        size_t offset = ((size_t)(slice_index - srcZ) * (dstX - srcX) * (dstY - srcY)) * voxel_size;
+        ReadSliceData(slice_index, srcX, srcY, dstX, dstY, reinterpret_cast<uint8_t*>(buf) + offset);
+    }
+#endif
 }
 
 void SlicedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) {
     // invoke ReadSliceData
-    if(srcX >= dstX || srcY >= dstY || srcZ >= dstZ) return;
-    if(!reader) return;
-    for(int slice_index = srcZ; slice_index < dstZ; slice_index++){
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && reader);
+
+    int beg_z = std::max<int>(0, srcZ);
+    int end_z = std::min<int>(_->desc.extend.depth, dstZ);
+    for(int slice_index = beg_z; slice_index < end_z; slice_index++){
         ReadSliceData(slice_index, srcX, srcY, dstX, dstY,
                                  [&reader, dz = slice_index - srcZ]
                                  (int dx, int dy, const void* src, size_t ele_size){
@@ -327,14 +339,14 @@ void SlicedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int ds
 }
 
 SlicedGridVolumeDesc SlicedGridVolumeReader::GetVolumeDesc() const noexcept {
-
+    assert(CheckValidation(_->desc));
     return _->desc;
 }
 
 void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, void *buf) {
     // maybe invoke next ReadSliceData to imply but would loss efficient
     if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(!buf ) return;
+    assert(buf);
     assert(_->desc.name_generator);
     assert(_->slice_bytes);
     auto size = _->slice_bytes;
@@ -351,36 +363,39 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, void *buf) {
             auto& updated = _->slice_cache->get_back();
             updated.first = sliceIndex;
             // check size
-            auto ret = _->slice_io_wrapper->Read(updated.second,_->slice_bytes);
-            assert(ret == _->slice_bytes);
-            // todo log
+            auto ret = _->slice_io_wrapper->Read(updated.second, _->slice_bytes);
+            if(ret != _->slice_bytes){
+                throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+            }
             // copy to buf
             std::copy(updated.second, updated.second + size, reinterpret_cast<uint8_t*>(buf));
             _->slice_cache->get_value_ptr(sliceIndex);
-            return ;
+            return;
         }
     }
     else{
         if(_->slice_index == sliceIndex){
-            std::memcpy(buf,_->slice_data.data(),size);
-            return ;
+            std::memcpy(buf, _->slice_data.data(), size);
+            return;
         }
         else{
             _->slice_io_wrapper->Open(_->desc.name_generator(sliceIndex) + _->file.GetSliceDataFormat(), "r");
-            auto ret =  _->slice_io_wrapper->Read(_->slice_data.data(),_->slice_bytes);
-            assert(ret == _->slice_bytes);
+            auto ret =  _->slice_io_wrapper->Read(_->slice_data.data(), _->slice_bytes);
+            if(ret != _->slice_bytes){
+                throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+            }
             _->slice_index = sliceIndex;
             if(buf != _->slice_data.data())
-                std::memcpy(buf,_->slice_data.data(),size);
-            return ;
+                std::memcpy(buf, _->slice_data.data(), size);
+            return;
         }
     }
 }
 
 void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, SliceReadFunc reader) {
     if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(!reader) return;
-    size_t read_size  = 0;
+    assert(reader);
+
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     const uint8_t* src_ptr = nullptr;
     auto slice_w = _->desc.extend.width;
@@ -396,7 +411,9 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, SliceReadFunc reader)
             updated.first = sliceIndex;
             src_ptr = updated.second;
             auto ret = _->slice_io_wrapper->Read(updated.second, _->slice_bytes);
-            assert(ret == _->slice_bytes);
+            if(ret != _->slice_bytes){
+                throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+            }
             // change priority
             _->slice_cache->get_value_ptr(sliceIndex);
         }
@@ -408,7 +425,9 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, SliceReadFunc reader)
         else{
             _->slice_io_wrapper->Open(_->desc.name_generator(sliceIndex) + _->file.GetSliceDataFormat(), "r");
             auto ret =  _->slice_io_wrapper->Read(_->slice_data.data(),_->slice_bytes);
-            assert(ret == _->slice_bytes);
+            if(ret != _->slice_bytes){
+                throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+            }
             src_ptr = _->slice_data.data();
             _->slice_index = sliceIndex;
         }
@@ -420,14 +439,15 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, SliceReadFunc reader)
             reader(row, col, src_ptr + src_offset, voxel_size);
         }
     }
-    return;
 }
 
 void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, void *buf) {
-    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(srcX >= dstX || srcY >= dstY) return;
-    if(!buf) return;
-
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(srcX < dstX && srcY < dstY && buf);
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
 
@@ -438,35 +458,49 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, int srcX, int srcY, i
         size_t dst_offset = ((size_t)dy * width + dx) * ele_size;
         copy_func(reinterpret_cast<const uint8_t*>(src),dst_ptr + dst_offset);
     });
-
+#else
+    ReadSliceData(sliceIndex, _->slice_data.data());
+    auto src_ptr = reinterpret_cast<const uint8_t*>(_->slice_data.data());
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    int slice_w = _->desc.extend.width;
+    int slice_h = _->desc.extend.height;
+    int beg_x = std::max<int>(0, srcX);
+    int beg_y = std::max<int>(0, srcY);
+    int end_x = std::min<int>(slice_w, dstX);
+    int end_y = std::min<int>(slice_h, dstY);
+    size_t x_voxel_size = (end_x - beg_x) * voxel_size;
+    //TODO multi-threading?
+    for(int y = beg_y; y < end_y; y++){
+        size_t src_offset = ((size_t)y * slice_w + beg_x) * voxel_size;
+        size_t dst_offset = ((size_t)(y - srcY) * (dstX - srcX) + beg_x - srcX) * voxel_size;
+        std::memcpy(reinterpret_cast<uint8_t*>(buf) + dst_offset, src_ptr + src_offset, x_voxel_size);
+    }
+#endif
 }
 
 void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceReadFunc reader) {
-    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(srcX >= dstX || srcY >= dstY) return;
-    if(!reader) return;
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(srcX < dstX && srcY < dstY && reader);
 
-    size_t read_size  = 0;
-    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
-    auto slice_w = _->desc.extend.width;
-    auto slice_h = _->desc.extend.height;
-    auto valid_pos = [width = slice_w, height = slice_h](int row, int col){
-        return row >= 0 && col >= 0 && row < height && col < width;
-    };
-
-    ReadSliceData(sliceIndex,_->slice_data.data());
-    // must equal or throw an exception
+    ReadSliceData(sliceIndex, _->slice_data.data());
     auto src_ptr = reinterpret_cast<const uint8_t*>(_->slice_data.data());
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    int slice_w = _->desc.extend.width;
+    int slice_h = _->desc.extend.height;
+    int beg_x = std::max<int>(0, srcX);
+    int beg_y = std::max<int>(0, srcY);
+    int end_x = std::min<int>(slice_w, dstX);
+    int end_y = std::min<int>(slice_h, dstY);
 
-    // element range copy, maybe slow but can support more features
-    for(int row = srcY; row < dstY; row++){
-        for(int col = srcX; col < dstX; col++){
-            if(!valid_pos(row, col)) continue;
-            size_t src_offset = ((size_t)row * slice_w + col) * voxel_size;
-            reader(col - srcX, row - srcY, src_ptr + src_offset, voxel_size);
+    for(int y = beg_y; y < end_y; y++){
+        for(int x = beg_x; x < end_x; x++){
+            size_t src_offset = ((size_t)y * slice_w + x) * voxel_size;
+            reader(x - srcX, y - srcY, src_ptr + src_offset, voxel_size);
         }
     }
-    return;
 }
 
 void SlicedGridVolumeReader::SetUseCached(bool useCached) noexcept {
@@ -483,7 +517,6 @@ void SlicedGridVolumeReader::SetUseCached(bool useCached) noexcept {
             _->slice_cache->emplace_back(-i, _->buffers[i].data());
         }
     }
-
     _->use_cache = useCached;
 }
 
@@ -537,22 +570,28 @@ SlicedGridVolumeWriter::~SlicedGridVolumeWriter() {
 
 
 SlicedGridVolumeDesc SlicedGridVolumeWriter::GetVolumeDesc() const noexcept {
+    assert(CheckValidation(_->desc));
     return _->desc;
 }
 
 void SlicedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) {
-    if(srcX >= dstX || srcY >= dstY || srcZ >= dstZ) return;
-    if(!writer) return;
-    for(int slice_index = srcZ; slice_index < dstZ; slice_index++){
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ);
+    assert(writer);
+
+    int beg_z = std::max<int>(0, srcZ);
+    int end_z = std::min<int>(_->desc.extend.depth, dstZ);
+    for(int slice_index = beg_z; slice_index < end_z; slice_index++){
         WriteSliceData(slice_index, srcX, srcY, dstX, dstY,
                         [&writer, dz = slice_index - srcZ]
-                             (int dx,int dy,void* dst, size_t ele_size){
-                         return writer(dx, dy, dz, dst, ele_size);
-                        });
+                        (int dx, int dy, void* dst, size_t ele_size){
+            writer(dx, dy, dz, dst, ele_size);
+        });
     }
 }
 
 void SlicedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf) {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && buf);
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
     return WriteVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
@@ -562,11 +601,24 @@ void SlicedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int d
         size_t src_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
         copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
     });
+#else
+    int beg_z = std::max<int>(0, srcZ);
+    int end_z = std::min<int>(_->desc.extend.depth, dstZ);
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    for(int slice_index = beg_z; slice_index < end_z; slice_index++){
+        size_t offset = (size_t)(slice_index - srcZ) * (dstX - srcX) * (dstY - srcY) * voxel_size;
+        WriteSliceData(slice_index, srcX, srcY, dstX, dstY, reinterpret_cast<const uint8_t*>(buf) + offset);
+    }
+#endif
 }
 
 void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, SliceWriteFunc writer) {
-    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(!writer) return;
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(writer);
+
     if(sliceIndex != _->slice_index){
         // flush old slice data
         Flush();
@@ -586,15 +638,20 @@ void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, SliceWriteFunc write
     }
 
     auto ret = _->slice_io_wrapper->Write(_->slice_data.data(),_->slice_bytes, true);
-    assert(ret == _->slice_bytes);
+    if(ret != _->slice_bytes){
+        throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+    }
 
     _->dirty.assign(_->dirty.size(), false);
     _->slice_index = sliceIndex;
 }
 
 void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, const void *buf) {
-    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(!buf) return;
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(buf);
 
     // not invoke WriteSliceData above and use below code is more efficient
     if(sliceIndex != _->slice_index){
@@ -610,16 +667,20 @@ void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, const void *buf) {
     std::memcpy(_->slice_data.data(), buf, write_size);
 
     auto ret = _->slice_io_wrapper->Write(_->slice_data.data(),_->slice_bytes, true);
-    assert(ret == _->slice_bytes);
+    if(ret != _->slice_bytes){
+        throw VolumeFileIOError("ReadSliceData size is not right : " + std::to_string(ret) + " , expect size : " + std::to_string(_->slice_bytes));
+    }
 
     _->dirty.assign(_->dirty.size(), false);
     _->slice_index = sliceIndex;
 }
 
 void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, SliceWriteFunc writer) {
-    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth) return;
-    if(srcX >= dstX || srcY >= dstY) return;
-    if(!writer) return;
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(srcX < dstX && srcY < dstY && writer);
 
     if(sliceIndex != _->slice_index){
         // flush old slice data
@@ -630,24 +691,31 @@ void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, int srcX, int srcY, 
         _->slice_io_wrapper->Open(_->desc.name_generator(sliceIndex) + _->file.GetSliceDataFormat(), "w");
     }
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
-    auto slice_w = _->desc.extend.width;
-    auto slice_h = _->desc.extend.height;
-    auto valid_pos = [width = slice_w, height = slice_h](int row, int col){
-        return row >= 0 && col >= 0 && row < height && col < width;
-    };
+    int slice_w = _->desc.extend.width;
+    int slice_h = _->desc.extend.height;
+    int beg_x = std::max<int>(0, srcX);
+    int beg_y = std::max<int>(0, srcY);
+    int end_x = std::min<int>(slice_w, dstX);
+    int end_y = std::min<int>(slice_h, dstY);
     auto dst_ptr = _->slice_data.data();
-    for(int row = srcY; row < dstY; row++){
-        for(int col = srcX; col < dstX; col++){
-            if(!valid_pos(row, col)) continue;
+    for(int row = beg_y; row < end_y; row++){
+        for(int col = beg_x; col < end_x; col++){
             size_t dst_offset = ((size_t)row * slice_w + col) * voxel_size;
             writer(col - srcX, row - srcY, dst_ptr + dst_offset, voxel_size);
-            _->dirty[row] = true;
         }
+        _->dirty[row] = true;
     }
     _->slice_index = sliceIndex;
 }
 
 void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, int srcX, int srcY, int dstX, int dstY, const void *buf) {
+    if(sliceIndex < 0 || sliceIndex >= _->desc.extend.depth){
+        std::cerr << "ReadSliceData with invalid slice index : " << sliceIndex << std::endl;
+        return;
+    }
+    assert(srcX < dstX && srcY < dstY && buf);
+
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
     return WriteSliceData(sliceIndex, srcX, srcY, dstX, dstY,
@@ -656,6 +724,32 @@ void SlicedGridVolumeWriter::WriteSliceData(int sliceIndex, int srcX, int srcY, 
         size_t src_offset = ((size_t)dy * width + dx) * ele_size;
         copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
     });
+#else
+    if(sliceIndex != _->slice_index){
+        // flush old slice data
+        Flush();
+        // open new slice
+        _->slice_io_wrapper->Close();
+        _->slice_io_wrapper->SetSliceInfo(_->slice_info);
+        _->slice_io_wrapper->Open(_->desc.name_generator(sliceIndex) + _->file.GetSliceDataFormat(), "w");
+    }
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    int slice_w = _->desc.extend.width;
+    int slice_h = _->desc.extend.height;
+    int beg_x = std::max<int>(0, srcX);
+    int beg_y = std::max<int>(0, srcY);
+    int end_x = std::min<int>(slice_w, dstX);
+    int end_y = std::min<int>(slice_h, dstY);
+    size_t x_voxel_size = (end_x - beg_x) * voxel_size;
+    auto dst_ptr = _->slice_data.data();
+    for(int row = beg_y; row < end_y; row++){
+        size_t dst_offset = ((size_t)row * slice_w + beg_x) * voxel_size;
+        size_t src_offset = ((size_t)(row - srcY) * (dstX - srcX) + beg_x - srcX) * voxel_size;
+        std::memcpy(dst_ptr + dst_offset, reinterpret_cast<const uint8_t*>(buf) + src_offset, x_voxel_size);
+        _->dirty[row] = true;
+    }
+    _->slice_index = sliceIndex;
+#endif
 }
 
 void SlicedGridVolumeWriter::Flush() {
@@ -665,7 +759,11 @@ void SlicedGridVolumeWriter::Flush() {
     for(int row = 0; row < _->desc.extend.height; row++){
         if(!_->dirty[row]) continue;
         size_t offset = row * pitch;
-        _->slice_io_wrapper->Write(row, 1, _->slice_data.data() + offset, pitch, false | _->desc.overwrite);
+        auto ret = _->slice_io_wrapper->Write(row, 1, _->slice_data.data() + offset, pitch, false | _->desc.overwrite);
+        if(ret != pitch){
+            throw VolumeFileIOError("SlicedGridVolumeWriter::Flush with wrong returned write size : " + std::to_string(ret) + " ,expect "
+            + std::to_string(pitch));
+        }
         _->dirty[row] = false;
     }
     std::memset(_->slice_data.data(), 0, _->slice_data.size());

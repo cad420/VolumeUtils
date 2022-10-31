@@ -248,8 +248,8 @@ EncodedBlockedGridVolumeDesc EncodedBlockedGridVolumeReader::GetVolumeDesc() con
 }
 
 void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf) {
-    //todo 使用memcpy进行优化
-
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && buf);
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
     ReadVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
@@ -259,12 +259,7 @@ void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ
           size_t dst_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
           copy_func(reinterpret_cast<const uint8_t*>(src), dst_ptr + dst_offset);
     });
-}
-
-void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) {
-    if(srcX >= dstX || srcY >= dstY || srcZ >= dstZ) return;
-    if(!reader) return;
-
+#else
     const int block_length = _->desc.block_length;
     const int padding = _->desc.padding;
     const int buffer_length = block_length + padding * 2;
@@ -272,38 +267,38 @@ void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ
         if(x >= 0) return (x + block_length - 1) / block_length;
         return (x - block_length) / block_length;
     };
+    //[src, dst)
+    //[beg, end)
+    const int width = _->desc.extend.width;
+    const int height = _->desc.extend.height;
+    const int depth = _->desc.extend.depth;
+    const int beg_block_x = get_index(std::max<int>(0, srcX));
+    const int end_block_x = get_index(std::min<int>(width, dstX));
+    const int beg_block_y = get_index(std::max<int>(0, srcY));
+    const int end_block_y = get_index(std::min<int>(height, dstY));
+    const int beg_block_z = get_index(std::max<int>(0, srcZ));
+    const int end_block_z = get_index(std::min<int>(depth, dstZ));
 
-    //TODO
-    const int beg_block_x = get_index(srcX);
-    const int end_block_x = get_index(dstX) + 1;
-    const int beg_block_y = get_index(srcY);
-    const int end_block_y = get_index(dstY) + 1;
-    const int beg_block_z = get_index(srcZ);
-    const int end_block_z = get_index(dstZ) + 1;
-
-    size_t filled_size = 0;
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     const auto src_ptr = _->block_data.data();
-    auto fill_reader = [&](const BlockIndex& block_idx){
+    auto fill_reader = [&, block_size = buffer_length](const BlockIndex& block_idx){
         assert(_->CheckValidation(block_idx));
-        const int beg_x = block_idx.x * block_length - padding;
-        const int end_x = beg_x + padding + block_length + padding;
-        const int beg_y = block_idx.y * block_length - padding;
-        const int end_y = beg_y + padding + block_length + padding;
-        const int beg_z = block_idx.z * block_length - padding;
-        const int end_z = beg_z + padding + block_length + padding;
-        size_t read_size = 0;
+        const int beg_x = std::max<int>(block_idx.x * block_length - padding, srcX);
+        const int end_x = std::min<int>(beg_x + block_size, dstX);
+        const int beg_y = std::max<int>(block_idx.y * block_length - padding, srcY);
+        const int end_y = std::min<int>(beg_y + block_size, dstY);
+        const int beg_z = std::max<int>(block_idx.z * block_length - padding, srcZ);
+        const int end_z = std::min<int>(beg_z + block_size, dstZ);
+        const int block_size2 = block_size * block_size;
+        size_t x_voxel_size = (end_x - beg_x) * voxel_size;
         for(int z = beg_z; z < end_z; z++){
             for(int y = beg_y; y < end_y; y++){
-                for(int x = beg_x; x < end_x; x++){
-                    size_t src_offset = ((size_t)buffer_length * buffer_length * (z - beg_z) + buffer_length * (y - beg_y) + (x - beg_x)) * voxel_size;
-                    reader(x - srcX, y - srcY, z - srcZ, src_ptr + src_offset, voxel_size);
-                }
+                size_t src_offset = ((size_t)block_size2 * (z - beg_z) + block_size * (y - beg_y)) * voxel_size;
+                size_t dst_offset =  ((size_t)(z - srcZ) * (dstX - srcX) * (dstY - srcY) + (size_t)(y - srcY) * (dstX - srcX) + beg_x - srcX) * voxel_size;
+                std::memcpy(reinterpret_cast<uint8_t*>(buf) + dst_offset, src_ptr + src_offset, x_voxel_size);
             }
         }
-        return;
     };
-
     for(int block_z = beg_block_z; block_z < end_block_z; block_z++){
         for(int block_y = beg_block_y; block_y < end_block_y; block_y++){
             for(int block_x = beg_block_x; block_x < end_block_x; block_x++){
@@ -313,13 +308,66 @@ void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ
             }
         }
     }
-    return ;
+#endif
+}
+
+void EncodedBlockedGridVolumeReader::ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeReadFunc reader) {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && reader);
+
+    const int block_length = _->desc.block_length;
+    const int padding = _->desc.padding;
+    const int buffer_length = block_length + padding * 2;
+    auto get_index = [block_length](int x){
+        if(x >= 0) return (x + block_length - 1) / block_length;
+        return (x - block_length) / block_length;
+    };
+    //[src, dst)
+    //[beg, end)
+    const int width = _->desc.extend.width;
+    const int height = _->desc.extend.height;
+    const int depth = _->desc.extend.depth;
+    const int beg_block_x = get_index(std::max<int>(0, srcX));
+    const int end_block_x = get_index(std::min<int>(width, dstX));
+    const int beg_block_y = get_index(std::max<int>(0, srcY));
+    const int end_block_y = get_index(std::min<int>(height, dstY));
+    const int beg_block_z = get_index(std::max<int>(0, srcZ));
+    const int end_block_z = get_index(std::min<int>(depth, dstZ));
+
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    const auto src_ptr = _->block_data.data();
+    auto fill_reader = [&, block_size = buffer_length](const BlockIndex& block_idx){
+        assert(_->CheckValidation(block_idx));
+        const int beg_x = std::max<int>(block_idx.x * block_length - padding, srcX);
+        const int end_x = std::min<int>(beg_x + block_size, dstX);
+        const int beg_y = std::max<int>(block_idx.y * block_length - padding, srcY);
+        const int end_y = std::min<int>(beg_y + block_size, dstY);
+        const int beg_z = std::max<int>(block_idx.z * block_length - padding, srcZ);
+        const int end_z = std::min<int>(beg_z + block_size, dstZ);
+        const int block_size2 = block_size * block_size;
+        for(int z = beg_z; z < end_z; z++){
+            for(int y = beg_y; y < end_y; y++){
+                for(int x = beg_x; x < end_x; x++){
+                    size_t src_offset = ((size_t)block_size2 * (z - beg_z) + block_size * (y - beg_y) + (x - beg_x)) * voxel_size;
+                    reader(x - srcX, y - srcY, z - srcZ, src_ptr + src_offset, voxel_size);
+                }
+            }
+        }
+    };
+    for(int block_z = beg_block_z; block_z < end_block_z; block_z++){
+        for(int block_y = beg_block_y; block_y < end_block_y; block_y++){
+            for(int block_x = beg_block_x; block_x < end_block_x; block_x++){
+                const BlockIndex block_idx = {block_x, block_y, block_z};
+                ReadBlockData(block_idx, _->block_data.data());
+                fill_reader(block_idx);
+            }
+        }
+    }
 }
 
 void EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex, void *buf) {
-    // check blockIndex
-    if(!_->CheckValidation(blockIndex)) return;
-    if(!buf) return;
+    assert(_->CheckValidation(blockIndex) && buf);
+
+
     Packets packets;
     ReadEncodedBlockData(blockIndex, packets);
     // invoke ReadBlockData next is ok but may loss efficient
@@ -328,8 +376,8 @@ void EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex,
 }
 
 void EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex, VolumeReadFunc reader) {
-    if(!_->CheckValidation(blockIndex)) return ;
-    if(!reader) return;
+    if(_->CheckValidation(blockIndex) && reader);
+
     ReadBlockData(blockIndex, _->block_data.data());
 
     const int block_length = _->desc.block_length;
@@ -337,7 +385,6 @@ void EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex,
     const int buffer_length = block_length + 2 * padding;
     const auto src_ptr = _->block_data.data();
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
-    size_t read_size = 0;
     for(int z = 0; z < buffer_length; z++){
         for(int y = 0; y < buffer_length; y++){
             for(int x = 0; x < buffer_length; x++){
@@ -346,11 +393,11 @@ void EncodedBlockedGridVolumeReader::ReadBlockData(const BlockIndex &blockIndex,
             }
         }
     }
-    return ;
 }
 
 size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &blockIndex, Packets &packets) {
-    if(!_->CheckValidation(blockIndex)) return 0;
+    assert(_->CheckValidation(blockIndex));
+
     auto size = _->file.GetBlockSize(blockIndex);
     uint8_t* ptr;
     std::vector<uint8_t> tmp;
@@ -360,23 +407,21 @@ size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &bl
         ptr = tmp.data();
     }
     auto ret = _->file.ReadBlock(blockIndex, ptr, size);
-    assert(ret == size);
     size_t offset = 0;
-    size_t read_size = 0;
     while(offset < size){
         size_t packet_size = *reinterpret_cast<size_t*>(ptr + offset);
-        read_size += packet_size;
         auto& packet_buffer = packets.emplace_back();
         packet_buffer.resize(packet_size, 0);
         offset += 8;
         std::memcpy(packet_buffer.data(), ptr + offset , packet_size);
         offset += packet_size;
     }
-    return read_size;
+    assert(ret == offset);
+    return ret;
 }
 
 size_t EncodedBlockedGridVolumeReader::ReadEncodedBlockData(const BlockIndex &blockIndex, void *buf, size_t size) {
-    if(!_->CheckValidation(blockIndex)) return 0;
+    assert(_->CheckValidation(blockIndex));
     return _->file.ReadBlock(blockIndex, buf, size);
 }
 
@@ -429,8 +474,7 @@ EncodedBlockedGridVolumeDesc EncodedBlockedGridVolumeWriter::GetVolumeDesc() con
 }
 
 void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) {
-    if(srcX >= dstX || srcY >= dstY || srcZ >= dstZ) return;
-    if(!writer) return;
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && writer);
 
     const int block_length = _->desc.block_length;
     const int padding = _->desc.padding;
@@ -439,45 +483,52 @@ void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int src
         if(x >= 0) return (x + block_length - 1) / block_length;
         return (x - block_length) / block_length;
     };
+    //[src, dst)
+    //[beg, end)
+    const int width = _->desc.extend.width;
+    const int height = _->desc.extend.height;
+    const int depth = _->desc.extend.depth;
+    const int beg_block_x = get_index(std::max<int>(0, srcX));
+    const int end_block_x = get_index(std::min<int>(width, dstX));
+    const int beg_block_y = get_index(std::max<int>(0, srcY));
+    const int end_block_y = get_index(std::min<int>(height, dstY));
+    const int beg_block_z = get_index(std::max<int>(0, srcZ));
+    const int end_block_z = get_index(std::min<int>(depth, dstZ));
 
-    const int beg_block_x = get_index(srcX);
-    const int end_block_x = get_index(dstX) + 1;
-    const int beg_block_y = get_index(srcY);
-    const int end_block_y = get_index(dstY) + 1;
-    const int beg_block_z = get_index(srcZ);
-    const int end_block_z = get_index(dstZ) + 1;
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     const auto dst_ptr = _->block_data.data();
-    auto fill_writer = [&](const BlockIndex& block_idx){
+    auto fill_writer = [&, block_size = buffer_length](const BlockIndex& block_idx){
         assert(_->CheckValidation(block_idx));
-        const int beg_x = block_idx.x * block_length - padding;
-        const int end_x = beg_x + padding + block_length + padding;
-        const int beg_y = block_idx.y * block_length - padding;
-        const int end_y = beg_y + padding + block_length + padding;
-        const int beg_z = block_idx.z * block_length - padding;
-        const int end_z = beg_z + padding + block_length + padding;
+        const int beg_x = std::max<int>(block_idx.x * block_length - padding, srcX);
+        const int end_x = std::min<int>(beg_x + block_size, dstX);
+        const int beg_y = std::max<int>(block_idx.y * block_length - padding, srcY);
+        const int end_y = std::min<int>(beg_y + block_size, dstY);
+        const int beg_z = std::max<int>(block_idx.z * block_length - padding, srcZ);
+        const int end_z = std::min<int>(beg_z + block_size, dstZ);
+        const int block_size2 = block_size * block_size;
         for(int z = beg_z; z < end_z; z++){
             for(int y = beg_y; y < end_y; y++){
                 for(int x = beg_x; x < end_x; x++){
-                    size_t dst_offset = ((size_t)buffer_length * buffer_length * (z - beg_z) + buffer_length * (y - beg_y) + (x - beg_x)) * voxel_size;
+                    size_t dst_offset = ((size_t)block_size2 * (z - beg_z) + block_size * (y - beg_y) + (x - beg_x)) * voxel_size;
                     writer(x - srcX, y - srcY, z - srcZ, dst_ptr + dst_offset, voxel_size);
                 }
             }
         }
     };
-
     for(int block_z = beg_block_z; block_z < end_block_z; block_z++){
         for(int block_y = beg_block_y; block_y < end_block_y; block_y++){
             for(int block_x = beg_block_x; block_x < end_block_x; block_x++){
                 const BlockIndex block_idx = {block_x, block_y, block_z};
                 fill_writer(block_idx);
-                WriteBlockData(block_idx,_->block_data.data());
+                WriteBlockData(block_idx, _->block_data.data());
             }
         }
     }
 }
 
 void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf) {
+    assert(srcX < dstX && srcY < dstY && srcZ < dstZ && buf);
+#ifndef HIGH_PERFORMANCE
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     auto copy_func = GetCopyBitsFunc(voxel_size);
     return WriteVolumeData(srcX, srcY, srcZ, dstX, dstY, dstZ,
@@ -487,11 +538,61 @@ void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int src
             size_t src_offset = ((size_t)dz * width * height + (size_t)dy * width + dx) * ele_size;
             copy_func(src_ptr + src_offset, reinterpret_cast<uint8_t*>(dst));
     });
+#else
+    const int block_length = _->desc.block_length;
+    const int padding = _->desc.padding;
+    const int buffer_length = block_length + padding * 2;
+    auto get_index = [block_length](int x){
+        if(x >= 0) return (x + block_length - 1) / block_length;
+        return (x - block_length) / block_length;
+    };
+    //[src, dst)
+    //[beg, end)
+    const int width = _->desc.extend.width;
+    const int height = _->desc.extend.height;
+    const int depth = _->desc.extend.depth;
+    const int beg_block_x = get_index(std::max<int>(0, srcX));
+    const int end_block_x = get_index(std::min<int>(width, dstX));
+    const int beg_block_y = get_index(std::max<int>(0, srcY));
+    const int end_block_y = get_index(std::min<int>(height, dstY));
+    const int beg_block_z = get_index(std::max<int>(0, srcZ));
+    const int end_block_z = get_index(std::min<int>(depth, dstZ));
+
+    size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
+    const auto dst_ptr = _->block_data.data();
+    auto fill_writer = [&, block_size = buffer_length](const BlockIndex& block_idx){
+        assert(_->CheckValidation(block_idx));
+        const int beg_x = std::max<int>(block_idx.x * block_length - padding, srcX);
+        const int end_x = std::min<int>(beg_x + block_size, dstX);
+        const int beg_y = std::max<int>(block_idx.y * block_length - padding, srcY);
+        const int end_y = std::min<int>(beg_y + block_size, dstY);
+        const int beg_z = std::max<int>(block_idx.z * block_length - padding, srcZ);
+        const int end_z = std::min<int>(beg_z + block_size, dstZ);
+        const int block_size2 = block_size * block_size;
+        size_t x_voxel_size = (end_x - beg_x) * voxel_size;
+        for(int z = beg_z; z < end_z; z++){
+            for(int y = beg_y; y < end_y; y++){
+                size_t dst_offset = ((size_t)block_size2 * (z - beg_z) + block_size * (y - beg_y)) * voxel_size;
+                size_t src_offset = ((size_t)(z - srcZ) * (dstY - srcY) * (dstX - srcX) + (y - srcY) * (dstX - srcX) + beg_z - srcX) * voxel_size;
+                std::memcpy(dst_ptr + dst_offset, reinterpret_cast<const uint8_t*>(buf) + src_offset, x_voxel_size);
+            }
+        }
+    };
+    for(int block_z = beg_block_z; block_z < end_block_z; block_z++){
+        for(int block_y = beg_block_y; block_y < end_block_y; block_y++){
+            for(int block_x = beg_block_x; block_x < end_block_x; block_x++){
+                const BlockIndex block_idx = {block_x, block_y, block_z};
+                fill_writer(block_idx);
+                WriteBlockData(block_idx, _->block_data.data());
+            }
+        }
+    }
+#endif
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, VolumeWriteFunc writer) {
-    if(!_->CheckValidation(blockIndex)) return;
-    if(!writer) return;
+    assert(_->CheckValidation(blockIndex) && writer);
+
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
     const int block_length = _->desc.block_length;
     const int padding = _->desc.padding;
@@ -509,8 +610,8 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, const void *buf) {
-    if(!_->CheckValidation(blockIndex)) return;
-    if(!buf) return;
+    assert(_->CheckValidation(blockIndex) && buf);
+
     Packets packets;
     const uint32_t bl = _->desc.block_length + 2 * _->desc.padding;
     _->video_codec->Encode({bl, bl, bl}, buf, _->block_bytes, packets);
@@ -518,8 +619,9 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const Packets &packets) {
-    if(!_->CheckValidation(blockIndex)) return;
-    size_t buf_size = packets.size() * 8;
+    assert(_->CheckValidation(blockIndex));
+
+    size_t buf_size = packets.size() * sizeof(size_t);
     for(auto& packet : packets) buf_size += packet.size();
     uint8_t* buf = nullptr;
     std::vector<uint8_t> tmp;
@@ -539,12 +641,12 @@ void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blo
         offset += packet.size();
     }
     assert(offset == buf_size);
-    WriteEncodedBlockData(blockIndex, buf, offset);
+    WriteEncodedBlockData(blockIndex, buf, buf_size);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const void *buf, size_t size) {
-    if(!_->CheckValidation(blockIndex)) return;
-    if(!buf || !size) return;
+    assert(_->CheckValidation(blockIndex) && buf && size);
+
     _->file.WriteBlock(blockIndex, buf, size);
 }
 

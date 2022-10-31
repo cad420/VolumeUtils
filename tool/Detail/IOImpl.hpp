@@ -31,26 +31,31 @@ struct IOImpl {
 
         // init blocked info
         auto &oblocked_encoded_desc = oblocked_encoded_unit.desc.encoded_blocked_desc;
-        uint32_t block_length = oblocked_encoded_desc.block_length;
+        const uint32_t block_length = oblocked_encoded_desc.block_length;
         assert(block_length % 2 == 0);
-        uint32_t padding = oblocked_encoded_desc.padding;
-        uint32_t block_size = block_length + 2 * padding;
-        uint32_t read_x_size = range.dst_x - range.src_x;
-        uint32_t read_y_size = range.dst_y - range.src_y;
-        uint32_t read_z_size = range.dst_z - range.src_z;
-        Extend3D grid_extend{read_x_size, block_size, block_size};
-        VoxelInfo _voxel_info{.type = Voxel::type, .format = Voxel::format};
-        RawGridVolumeDesc raw_desc{.extend = grid_extend}; raw_desc.voxel_info = _voxel_info;
-        RawGridVolume<Voxel> grid(raw_desc);
-        raw_desc.extend = {block_size, block_size, block_size};
-        RawGridVolume<Voxel> block(raw_desc);
+        const uint32_t padding = oblocked_encoded_desc.padding;
+        const uint32_t block_size = block_length + 2 * padding;
+        const uint32_t read_x_size = range.dst_x - range.src_x;
+        const uint32_t read_y_size = range.dst_y - range.src_y;
+        const uint32_t read_z_size = range.dst_z - range.src_z;
         // note read pos base on block_length but read region should base on block_size
         int y_read_count = (read_y_size + block_length - 1) / block_length;
         int z_read_count = (read_z_size + block_length - 1) / block_length;
         int x_block_count = (read_x_size + block_length - 1) / block_length;
 
+        Extend3D grid_extend{x_block_count * block_length + 2 * padding, block_size, block_size};
+        VoxelInfo _voxel_info{.type = Voxel::type, .format = Voxel::format};
+        RawGridVolumeDesc raw_desc{.extend = grid_extend}; raw_desc.voxel_info = _voxel_info;
+        RawGridVolume<Voxel> grid(raw_desc);
+        raw_desc.extend = {block_size, block_size, block_size};
+        RawGridVolume<Voxel> block(raw_desc);
+
+
         EncodedBlockedGridVolumeWriter encoded_blocked_writer(oblocked_encoded_unit.desc_filename, oblocked_encoded_desc);
+        bool eb_has_mp = oblocked_encoded_unit.ops.op_mask & Mapping;
+        bool eb_has_ss = oblocked_encoded_unit.ops.op_mask & Statistics;
         auto eb_mapping_func = oblocked_encoded_unit.ops.mapping.GetOp();
+
         StatisticsOp<Voxel> eb_ss;
 
         for (int z_turn = 0; z_turn < z_read_count; z_turn++) {
@@ -58,23 +63,32 @@ struct IOImpl {
                 reader->ReadVolumeData(range.src_x - padding,
                                        range.src_y + y_turn * block_length - padding,
                                        range.src_z + z_turn * block_length - padding,
-                                       range.dst_x + padding + 1,
-                                       range.src_y + (y_turn + 1) * block_length + padding + 1,
-                                       range.src_z + (z_turn + 1) * block_length + padding + 1,
+                                       std::min<int>(range.src_x + x_block_count * block_length + padding, range.dst_x),
+                                       range.src_y + (y_turn + 1) * block_length + padding,
+                                       range.src_z + (z_turn + 1) * block_length + padding,
                                        grid.GetRawDataPtr());
                 // write grid's blocks into file
                 for (int x_turn = 0; x_turn < x_block_count; x_turn++) {
-                    std::cout << "write block : (" << x_turn << ", " << y_turn << ", " << z_turn << ")" << std::endl;
-                    encoded_blocked_writer.WriteBlockData({x_turn, y_turn, z_turn},
+                    VOL_WHEN_DEBUG(std::cout << "write block : (" << x_turn << ", " << y_turn << ", " << z_turn << ")" << std::endl)
+                    if(eb_has_mp)
+                        encoded_blocked_writer.WriteBlockData({x_turn, y_turn, z_turn},
                                                           [&](int dx, int dy, int dz, void *dst, size_t ele_size) {
                                                               auto p = reinterpret_cast<Voxel *>(dst);
-                                                              int x = std::min<int>(grid_extend.width - 1, std::max<int>(0, x_turn * block_length - padding + dx));
-                                                              int y = std::min<int>(grid_extend.height - 1, std::max<int>(0, y_turn * block_length - padding + dy));
-                                                              int z = std::min<int>(grid_extend.depth - 1, std::max<int>(0, z_turn * block_length - padding + dz));
-                                                              *p = eb_mapping_func(
-                                                                      grid(x, y, z));
+//                                                              int x = std::min<int>(grid_extend.width - 1, std::max<int>(0, x_turn * block_length - padding + dx));
+//                                                              int y = std::min<int>(grid_extend.height - 1, std::max<int>(0, y_turn * block_length - padding + dy));
+//                                                              int z = std::min<int>(grid_extend.depth - 1, std::max<int>(0, z_turn * block_length - padding + dz));
+                                                              *p = eb_mapping_func(grid(dx, dy, dz));
                                                               eb_ss.AddVoxel(*p);
                                                           });
+                    else
+                        encoded_blocked_writer.WriteBlockData({x_turn, y_turn, z_turn},
+                                                              [&](int dx, int dy, int dz, void *dst, size_t ele_size) {
+                                                                  auto p = reinterpret_cast<Voxel *>(dst);
+//                                                                  int x = std::min<int>(grid_extend.width - 1, std::max<int>(0, x_turn * block_length - padding + dx));
+//                                                                  int y = std::min<int>(grid_extend.height - 1, std::max<int>(0, y_turn * block_length - padding + dy));
+//                                                                  int z = std::min<int>(grid_extend.depth - 1, std::max<int>(0, z_turn * block_length - padding + dz));
+                                                                  *p = grid(dx, dy, dz);
+                                                              });
                 }
                 if (!Other) continue;
                 // write grid to slices
@@ -92,7 +106,7 @@ struct IOImpl {
                     other_writer->WriteVolumeData(0, y_turn * block_length / 2, z_turn * block_length / 2,
                                                   (read_x_size + 1) /
                                                   2,// x y z out of slice region will be handled by WriteVolumeData
-                                                  (y_turn + 1) * block_length / 2,
+                                                  (y_turn + 1) * block_length / 2,// divided must be even, so this is ok
                                                   (z_turn + 1) * block_length / 2,
                                                   [&, beg_x = 0, end_x = read_x_size,
                                                           beg_y = y_turn * block_length / 2, beg_z =
@@ -163,7 +177,7 @@ struct IOImpl {
 
             if (!is_even) continue;
 
-            if constexpr(false){
+            VOL_WHEN_DEBUG({
                 std::vector<int> table(256, 0);
                 auto p = reinterpret_cast<Voxel*>(grid.GetRawDataPtr());
                 for(int i = 0; i < extend.size(); i++){
@@ -173,11 +187,12 @@ struct IOImpl {
                     std::cout << " (" << i <<  " : " << (int)table[i] << ") ";
                 }
                 std::cout << std::endl;
-            }
+            })
 
             for (auto &param: params.writers) {
                 if (!param.other_has_ds) {
-                    param.other_writer->WriteVolumeData(0, 0, z - range.src_z, slice_w, slice_h, z - range.src_z + 2,
+                    if(param.other_has_mp)
+                        param.other_writer->WriteVolumeData(0, 0, z - range.src_z, slice_w, slice_h, z - range.src_z + 2,
                                                         [&, other_mp_func = param.other_mp_func,
                                                                 other_ss_func = param.other_ss_func]
                                                                 (int dx, int dy, int dz, void *dst, size_t ele_size) {
@@ -185,8 +200,17 @@ struct IOImpl {
                                                             *p = other_mp_func(grid(dx, dy, dz));
                                                             other_ss_func->AddVoxel(*p);
                                                         });
+                    else
+                        param.other_writer->WriteVolumeData(0, 0, z - range.src_z, slice_w, slice_h, z - range.src_z + 2,
+                                                            [&, other_mp_func = param.other_mp_func,
+                                                                    other_ss_func = param.other_ss_func]
+                                                                    (int dx, int dy, int dz, void *dst, size_t ele_size) {
+                                                                auto p = reinterpret_cast<Voxel *>(dst);
+                                                                *p = grid(dx, dy, dz);
+                                                                other_ss_func->AddVoxel(*p);
+                                                            });
                 } else {
-                    param.other_writer->WriteVolumeData(0, 0, (z - range.src_z) / 2, slice_w / 2, slice_h / 2,
+                    param.other_writer->WriteVolumeData(0, 0, (z - range.src_z) / 2, slice_w / 2 + 1, slice_h / 2 + 1,
                                                         (z - range.src_z) / 2 + 1,
                                                         [&, other_mp_func = param.other_mp_func,
                                                                 other_ss_func = param.other_ss_func, other_ds_func = param.other_ds_func,
