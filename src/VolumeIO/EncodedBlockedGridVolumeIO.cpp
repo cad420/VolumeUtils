@@ -98,7 +98,7 @@ namespace{
             }
             auto& encoded_block = j.at("desc");
 
-            desc.volume_name = encoded_block.count(volume_name) == 0 ? "none" : std::string(j.at(volume_name));
+            desc.volume_name = encoded_block.count(volume_name) == 0 ? "none" : std::string(encoded_block.at(volume_name));
             desc.voxel_info.type = StrToVoxelType(encoded_block.count(voxel_type) == 0 ? "unknown" : encoded_block.at(voxel_type));
             desc.voxel_info.format = StrToVoxelFormat(encoded_block.count(voxel_format) == 0 ? "none" : encoded_block.at(voxel_format));
             if(encoded_block.count(extend) != 0){
@@ -109,11 +109,11 @@ namespace{
                 std::array<float, 3> sp = encoded_block.at(space);
                 desc.space = {sp[0], sp[1], sp[2]};
             }
-            desc.block_length = encoded_block.count(block_length) == 0 ? 0 : (int)j[block_length];
-            desc.padding = encoded_block.count(padding) == 0 ? 0 : (int)j[padding];
-            desc.codec = StrToGridVolumeDataCodec(encoded_block.count(volume_codec) == 0 ? "none" : j.at(volume_codec));
+            desc.block_length = encoded_block.count(block_length) == 0 ? 0 : (int)encoded_block.at(block_length);
+            desc.padding = encoded_block.count(padding) == 0 ? 0 : (int)encoded_block.at(padding);
+            desc.codec = StrToGridVolumeDataCodec(encoded_block.count(volume_codec) == 0 ? "none" : encoded_block.at(volume_codec));
 
-            desc.data_path = encoded_block.count(data_path) == 0 ? "none" : std::string(j.at(data_path));
+            desc.data_path = encoded_block.count(data_path) == 0 ? "none" : std::string(encoded_block.at(data_path));
 
             auto ret = OpenMetaFile(desc.data_path);
 
