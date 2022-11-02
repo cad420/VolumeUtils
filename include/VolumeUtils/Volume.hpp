@@ -304,6 +304,7 @@ using TVolumeWriteFunc = std::function<void(int dx, int dy, int dz, Voxel& dst)>
 template<typename Voxel>
 class VolumeInterface : public CVolumeInterface{
 public:
+    ~VolumeInterface() override = default;
     /**
      * @param buf ptr to buffer which will be filled
      * @note dst must > src, and read region is [src, dst)
@@ -331,6 +332,7 @@ using VolumeWriteFunc = std::function<void(int dx, int dy, int dz, void* dst, si
 
 class CVolumeReaderInterface{
 public:
+    virtual ~CVolumeReaderInterface() = default;
     /**
      * @note [src, dst)
      */
@@ -345,11 +347,15 @@ public:
 template<typename VolumeDescT>
 class VolumeReaderInterface : public CVolumeReaderInterface{
 public:
+    ~VolumeReaderInterface() override = default;
+
     virtual VolumeDescT GetVolumeDesc() const noexcept = 0;
 };
 
 class CVolumeWriterInterface{
 public:
+    virtual ~CVolumeWriterInterface() = default;
+
     virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, const void *buf)        = 0;
 
     virtual void WriteVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, VolumeWriteFunc writer) = 0;
@@ -361,6 +367,8 @@ public:
 template<typename VolumeDescT>
 class VolumeWriterInterface : public CVolumeWriterInterface{
 public:
+    ~VolumeWriterInterface() override = default;
+
     virtual VolumeDescT GetVolumeDesc() const noexcept = 0;
 };
 
@@ -400,7 +408,7 @@ public:
 
     explicit RawGridVolume(const RawGridVolumeDesc &desc);
 
-    ~RawGridVolume();
+    ~RawGridVolume() override;
 
     RawGridVolumeDesc GetVolumeDesc() const noexcept;
 
@@ -445,7 +453,7 @@ public:
      */
     explicit RawGridVolumeReader(const std::string& filename);
 
-    ~RawGridVolumeReader();
+    ~RawGridVolumeReader() override;
 
 public:
     void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
@@ -463,7 +471,7 @@ class RawGridVolumeWriter : public VolumeWriterInterface<RawGridVolumeDesc>{
 public:
     explicit RawGridVolumeWriter(const std::string& filename, const RawGridVolumeDesc& desc);
 
-    ~RawGridVolumeWriter();
+    ~RawGridVolumeWriter() override;
 
 public:
     RawGridVolumeDesc GetVolumeDesc() const noexcept override;
@@ -517,7 +525,7 @@ public:
 
     explicit SlicedGridVolume(const SlicedGridVolumeDesc& desc);
 
-    ~SlicedGridVolume();
+    ~SlicedGridVolume() override;
 
     SlicedGridVolumeDesc GetVolumeDesc() const noexcept;
 
@@ -555,7 +563,7 @@ public:
 
     SlicedGridVolumeReader(const std::string& filename);
 
-    ~SlicedGridVolumeReader();
+    ~SlicedGridVolumeReader() override;
 
 public:
 
@@ -603,7 +611,7 @@ class SlicedGridVolumeWriter : public VolumeWriterInterface<SlicedGridVolumeDesc
 public:
     SlicedGridVolumeWriter(const std::string& filename, const SlicedGridVolumeDesc& desc);
 
-    ~SlicedGridVolumeWriter();
+    ~SlicedGridVolumeWriter() override;
 
 public:
     SlicedGridVolumeDesc GetVolumeDesc() const noexcept override;
@@ -671,7 +679,7 @@ class BlockedGridVolumeReader : public VolumeReaderInterface<BlockedGridVolumeDe
 public:
     explicit BlockedGridVolumeReader(const std::string& filename);
 
-    ~BlockedGridVolumeReader();
+    ~BlockedGridVolumeReader() override;
 
 public:
     void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
@@ -697,7 +705,7 @@ class BlockedGridVolumeWriter : public VolumeWriterInterface<BlockedGridVolumeDe
 public:
     BlockedGridVolumeWriter(const std::string& filename, const BlockedGridVolumeDesc& desc);
 
-    ~BlockedGridVolumeWriter();
+    ~BlockedGridVolumeWriter() override;
 
 public:
     BlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
@@ -749,7 +757,7 @@ class EncodedGridVolumeReader : public VolumeReaderInterface<EncodedGridVolumeDe
 public:
     explicit EncodedGridVolumeReader(const std::string& filename);
 
-    ~EncodedGridVolumeReader();
+    ~EncodedGridVolumeReader() override;
 
 public:
     void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
@@ -775,7 +783,7 @@ class EncodedGridVolumeWriter : public VolumeWriterInterface<EncodedGridVolumeDe
 public:
     EncodedGridVolumeWriter(const std::string& filename, const EncodedGridVolumeDesc& desc);
 
-    ~EncodedGridVolumeWriter();
+    ~EncodedGridVolumeWriter() override;
 
 public:
     EncodedGridVolumeDesc GetVolumeDesc() const noexcept override;
@@ -817,7 +825,7 @@ class EncodedBlockedGridVolume: public BlockedGridVolume<Voxel>{
 public:
     explicit EncodedBlockedGridVolume(const EncodedBlockedGridVolumeDesc& desc);
 
-    ~EncodedBlockedGridVolume();
+    ~EncodedBlockedGridVolume() override;
 
 public:
 
@@ -831,7 +839,7 @@ class EncodedBlockedGridVolumeReader : public VolumeReaderInterface<EncodedBlock
 public:
     EncodedBlockedGridVolumeReader(const std::string& filename);
 
-    ~EncodedBlockedGridVolumeReader();
+    ~EncodedBlockedGridVolumeReader() override;
 
 public:
     void ReadVolumeData(int srcX, int srcY, int srcZ, int dstX, int dstY, int dstZ, void *buf)             override;
@@ -875,7 +883,7 @@ public:
      */
     EncodedBlockedGridVolumeWriter(const std::string& filename, const EncodedBlockedGridVolumeDesc& desc);
 
-    ~EncodedBlockedGridVolumeWriter();
+    ~EncodedBlockedGridVolumeWriter() override;
 
 public:
     EncodedBlockedGridVolumeDesc GetVolumeDesc() const noexcept override;
