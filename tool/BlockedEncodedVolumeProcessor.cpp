@@ -1,7 +1,7 @@
 #include "VolumeProcessor.hpp"
 #include "Detail/IOImpl.hpp"
 #include <iostream>
-
+#include "Common.hpp"
 template<typename Voxel>
 class BlockedEncodedVolumeProcessorPrivate{
 public:
@@ -38,9 +38,10 @@ public:
         assert(unit_mp.count(VolumeType::Grid_RAW));
         auto& units = unit_mp[VolumeType::Grid_RAW];
 
-        typename IOImpl<Voxel>::PackedParams1 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = encoded_blocked_reader.get(),
                 .range = range,
+                .oblocked_encoded_unit = src
         };
         std::vector<std::unique_ptr<RawGridVolumeWriter>> writers;
         while(!units.empty()){
@@ -70,7 +71,7 @@ public:
                                              .other_ss_func = ss
                                      });
         }
-        IOImpl<Voxel>::ConvertRawOrSlicedImpl(packed);
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true,false>(packed);
     }
 
     template<>
@@ -80,9 +81,10 @@ public:
         int slice_w = range.dst_x - range.src_x;
         int slice_h = range.dst_y - range.src_y;
 
-        typename IOImpl<Voxel>::PackedParams1 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = encoded_blocked_reader.get(),
                 .range = range,
+                .oblocked_encoded_unit = src
         };
         std::vector<std::unique_ptr<SlicedGridVolumeWriter>> writers;
         while(!units.empty()){
@@ -112,14 +114,14 @@ public:
                                              .other_ss_func = ss
                                      });
         }
-        IOImpl<Voxel>::ConvertRawOrSlicedImpl(packed);
+        IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true, false>(packed);
     }
 
     template<>
     void Convert<VolumeType::Grid_BLOCKED_ENCODED>(){
         auto oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
         unit_mp[VolumeType::Grid_BLOCKED_ENCODED].pop();
-        typename IOImpl<Voxel>::PackedParams0 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = encoded_blocked_reader.get(),
                 .range = range,
                 .oblocked_encoded_unit = oblocked_encoded_unit
@@ -159,6 +161,7 @@ VolumeProcessor<Voxel, VolumeType::Grid_BLOCKED_ENCODED>::SetSource(const Unit& 
 //    }
     _->Reset();
     _->src = u;
+    ReadDescFromFile(_->src.desc.encoded_blocked_desc, _->src.desc_filename);
     _->range = range;
     _->Init();
     return *this;

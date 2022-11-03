@@ -642,6 +642,10 @@ struct BlockIndex {
     bool operator==(const BlockIndex& blockIndex) const{
         return x == blockIndex.x && y == blockIndex.y && z == blockIndex.z;
     }
+    friend std::ostream& operator<<(std::ostream& os, const BlockIndex& idx){
+        os << "(" << idx.x << ", " << idx.y << ", " << idx.z << ")";
+        return os;
+    }
 };
 
 struct BlockedGridVolumeDesc : RawGridVolumeDesc{
@@ -807,7 +811,7 @@ struct EncodedBlockedGridVolumeDesc : BlockedGridVolumeDesc{
 };
 
 inline bool CheckValidation(const EncodedBlockedGridVolumeDesc& desc){
-    if(desc.block_length == 0 || desc.padding == 0 || desc.block_length <= (desc.padding << 1)){
+    if(desc.block_length == 0 || desc.block_length <= (desc.padding << 1)){
         return false;
     }
     if(desc.extend.width == 0 || desc.extend.height == 0 || desc.extend.depth == 0){

@@ -153,17 +153,6 @@ namespace{
 }
 
 class SlicedGridVolumeFile{
-    const char* sliced       = "sliced";
-    const char* slice_format = "slice_format";
-    const char* volume_name  = "volume_name";
-    const char* voxel_type   = "voxel_type";
-    const char* voxel_format = "voxel_format";
-    const char* extend       = "extend";
-    const char* space        = "space";
-    const char* axis         = "axis";
-    const char* prefix       = "prefix";
-    const char* postfix      = "postfix";
-    const char* setw         = "setw";
 public:
     bool Open(const std::string& filename){
         std::ifstream in(filename);
@@ -177,22 +166,11 @@ public:
         }
         auto& slice = j.at("desc");
 
+        using namespace detail;
         slice_data_format = slice.count(slice_format) == 0 ? ".none" : std::string(slice.at(slice_format));
-        desc.volume_name = slice.count(volume_name) == 0 ? "none" : std::string(slice.at(volume_name));
-        desc.voxel_info.type = StrToVoxelType(slice.count(voxel_type) == 0 ? "unknown" : slice.at(voxel_type));
-        desc.voxel_info.format = StrToVoxelFormat(slice.count(voxel_format) == 0 ? "none" : slice.at(voxel_format));
-        if(slice.count(extend) != 0){
-            std::array<int, 3> shape = slice.at(extend);
-            desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
-        }
-        if(slice.count(space) != 0){
-            std::array<float, 3> sp = slice.at(space);
-            desc.space = {sp[0], sp[1], sp[2]};
-        }
-        desc.axis = slice.count(axis) == 0 ? SliceAxis::AXIS_Z : static_cast<SliceAxis>(slice.at(axis));
-        desc.prefix = slice.count(prefix) == 0 ? "" : slice.at(prefix);
-        desc.postfix = slice.count(postfix) == 0 ? "" : slice.at(postfix);
-        desc.setw = slice.count(setw) == 0 ? 0 : (int)slice.at(setw);
+
+        ReadDescFromJson(desc, slice);
+
         return true;
     }
 
@@ -223,7 +201,7 @@ public:
         nlohmann::json jj;
 
         auto& j = jj["desc"];
-
+        using namespace detail;
         j[slice_format] = slice_data_format;
         j[volume_name]  = desc.volume_name;
         j[voxel_type]   = VoxelTypeToStr(desc.voxel_info.type);

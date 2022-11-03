@@ -1,6 +1,7 @@
 #include "VolumeProcessor.hpp"
 #include "Detail/IOImpl.hpp"
 #include <iostream>
+#include "Common.hpp"
 
 template<typename Voxel>
 class SlicedVolumeProcessorPrivate{
@@ -66,7 +67,7 @@ public:
         assert(unit_mp.count(VolumeType::Grid_RAW));
         auto& units = unit_mp[VolumeType::Grid_RAW];
 
-        typename IOImpl<Voxel>::PackedParams1 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = sliced_reader.get(),
                 .range = range,
         };
@@ -108,7 +109,7 @@ public:
         int slice_w = range.dst_x - range.src_x;
         int slice_h = range.dst_y - range.src_y;
 
-        typename IOImpl<Voxel>::PackedParams1 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = sliced_reader.get(),
                 .range = range,
         };
@@ -148,7 +149,7 @@ public:
         int slice_w = range.dst_x - range.src_x;
         int slice_h = range.dst_y - range.src_y;
 
-        typename IOImpl<Voxel>::PackedParams1 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = sliced_reader.get(),
                 .range = range,
         };
@@ -224,7 +225,7 @@ public:
     void Convert<VolumeType::Grid_BLOCKED_ENCODED>(){
         auto oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
         unit_mp[VolumeType::Grid_BLOCKED_ENCODED].pop();
-        typename IOImpl<Voxel>::PackedParams0 packed = {
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = sliced_reader.get(),
                 .range = range,
                 .oblocked_encoded_unit = oblocked_encoded_unit
@@ -274,33 +275,48 @@ public:
 
     template<>
     void Convert<VolumeType::Grid_RAW, VolumeType::Grid_BLOCKED_ENCODED>(){
-        if(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() > 1
-           || unit_mp[VolumeType::Grid_RAW].size() > 1){
+        if(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() > 1){
             Convert<VolumeType::Grid_RAW>();
             Convert<VolumeType::Grid_BLOCKED_ENCODED>();
             return;
         }
-        assert(unit_mp[VolumeType::Grid_RAW].size() == 1 && unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() == 1);
+        assert(unit_mp[VolumeType::Grid_BLOCKED_ENCODED].size() == 1);
 
-        auto oraw_unit = unit_mp[VolumeType::Grid_RAW].front();
-        unit_mp[VolumeType::Grid_RAW].pop();
         auto oblocked_encoded_unit = unit_mp[VolumeType::Grid_BLOCKED_ENCODED].front();
         unit_mp[VolumeType::Grid_BLOCKED_ENCODED].pop();
-        auto oraw_desc = oraw_unit.desc.sliced_desc;
-        auto other_ss = std::make_shared<StatisticsOp<Voxel>>();
-        RawGridVolumeWriter other_writer(oraw_unit.desc_filename, oraw_desc);
-        typename IOImpl<Voxel>::PackedParams0 packed = {
+
+        std::vector<std::unique_ptr<RawGridVolumeWriter>> writers;
+        typename IOImpl<Voxel>::PackedParams packed = {
                 .reader = sliced_reader.get(),
                 .range = range,
                 .oblocked_encoded_unit = oblocked_encoded_unit,
-                .other_writer = &other_writer,
-                .other_has_ds = static_cast<bool>(oraw_unit.ops.op_mask & DownSampling),
-                .other_has_mp = static_cast<bool>(oraw_unit.ops.op_mask & Mapping),
-                .other_has_ss = static_cast<bool>(oraw_unit.ops.op_mask & Statistics),
-                .other_ds_func = oraw_unit.ops.down_sampling.GetOp(),
-                .other_mp_func = oraw_unit.ops.mapping.GetOp(),
-                .other_ss_func = other_ss
         };
+        auto& units = unit_mp[VolumeType::Grid_RAW];
+        while(!units.empty()){
+            auto unit = units.front();
+            units.pop();
+            // init writer
+            assert(unit.type == VolumeType::Grid_RAW);
+            auto& writer = writers.emplace_back(std::make_unique<RawGridVolumeWriter>(unit.desc_filename, unit.desc.raw_desc));
+            int op_mask = unit.ops.op_mask;
+            bool has_mp = op_mask & Mapping;
+            bool has_ds = op_mask & DownSampling;
+            bool has_ss = op_mask & Statistics;
+
+            auto ss = std::make_shared<StatisticsOp<Voxel>>();
+            auto down_sampling_func = unit.ops.down_sampling.GetOp();
+            auto mapping_func = unit.ops.mapping.GetOp();
+
+            packed.writers.push_back({
+                                             .other_writer = writer.get(),
+                                             .other_has_ds = has_ds,
+                                             .other_has_mp = has_mp,
+                                             .other_has_ss = has_ss,
+                                             .other_ds_func = down_sampling_func,
+                                             .other_mp_func = mapping_func,
+                                             .other_ss_func = ss
+                                     });
+        }
         IOImpl<Voxel>::template ConvertBlockedEncodedImpl<true>(packed);
 
     }
@@ -342,6 +358,7 @@ VolumeProcessor<Voxel, VolumeType::Grid_SLICED>& VolumeProcessor<Voxel, VolumeTy
 //    }
     _->Reset();
     _->src = u;
+    ReadDescFromFile(_->src.desc.sliced_desc, _->src.desc_filename);
     _->range = range;
     _->Init();
     return *this;

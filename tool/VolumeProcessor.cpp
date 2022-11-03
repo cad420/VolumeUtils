@@ -46,6 +46,7 @@ namespace{
                 VolumeRange range;
                 VolumeType volume_type;
                 std::string volume_desc_file;
+                VolumeDescT desc;
                 VoxelInfo voxel_info;
             };
 

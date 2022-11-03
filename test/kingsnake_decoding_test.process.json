@@ -1,0 +1,124 @@
+{
+  "memory_limit_gb": 32,
+  "task_count" : 2,
+  "tasks": {
+    "task0": {
+      "src": {
+        "range": [0,0,0,1024,1024,795],
+        "volume_type": "encoded_blocked",
+        "volume_desc_file": "H:/Volume/gen_kingsnake_lod0.encoded_blocked.desc.json",
+        "voxel_type":"uint8",
+        "voxel_format":"r"
+      },
+      "dst_count": 1,
+      "dst0": {
+        "desc_filename": "H:/Volume/decoding_test_gen_kingsnake_lod0.raw.desc.json",
+        "volume_type": "raw",
+        "desc": {
+          "volume_name": "decoding_test_gen_kingsnake_lod0",
+          "voxel_type": "uint8",
+          "voxel_format": "r",
+          "extend": [1024,1024,795],
+          "space": [0.01,0.01,0.01],
+          "data_path" : "H:/Volume/decoding_test_kingsnake_1024_1024_795_uint8.raw"
+        },
+        "vol_filename": "",
+        "operations": {
+          "down_sampling": "no",
+          "down_sampling_method": "max",
+          "statistics": "no",
+          "statistics_filename": "",
+          "mapping": "no",
+          "mapping_ops": {
+            "add": 6,
+            "mul": 2
+          }
+        }
+      },
+      "dst1": {
+        "desc_filename": "H:/Volume/gen_kingsnake_lod1.raw.desc.json",
+        "volume_type": "raw",
+        "desc": {
+          "volume_name": "gen_kingsnake_lod1",
+          "voxel_type": "uint8",
+          "voxel_format": "r",
+          "extend": [512, 512, 398],
+          "space":[0.02, 0.02, 0.02],
+          "data_path": "H:/Volume/kingsnakelod1_512_512_398_uint8.raw"
+        },
+        "vol_filename": "",
+        "operations": {
+          "down_sampling": "yes",
+          "down_sampling_method": "max",
+          "statistics": "no",
+          "statistics_filename": "",
+          "mapping": "no",
+          "mapping_ops": {
+            "add": 1
+          }
+        }
+      }
+    },
+    "task1": {
+      "src":{
+        "range":[0, 0, 0, 512, 512, 398],
+        "volume_type": "encoded_blocked",
+        "volume_desc_file": "H:/Volume/gen_kingsnake_lod1.encoded_blocked.desc.json",
+        "voxel_type":"uint8",
+        "voxel_format":"r"
+      },
+      "dst_count": 1,
+      "dst0":{
+        "desc_filename": "H:/Volume/decoding_test_gen_kingsnake_lod1.raw.desc.json",
+        "volume_type": "raw",
+        "desc": {
+          "volume_name": "gen_kingsnake_lod1",
+          "voxel_type": "uint8",
+          "voxel_format": "r",
+          "extend": [512, 512, 398],
+          "space": [0.02, 0.02, 0.02],
+          "data_path" : "H:/Volume/decoding_test_kingsnake_512_512_398_uint8.raw"
+        },
+        "vol_filename": "",
+        "operations": {
+          "down_sampling": "no",
+          "down_sampling_method": "max",
+          "statistics": "no",
+          "statistics_filename": "",
+          "mapping": "no",
+          "mapping_ops": {
+            "add": 6,
+            "mul": 2
+          }
+        }
+      },
+      "dst1":{
+        "desc_filename": "gen_foot_lod2.sliced.desc.json",
+        "volume_type": "sliced",
+        "desc": {
+          "sliced_format": ".tif",
+          "volume_name": "gen_foot_lod2",
+          "voxel_type": "uint8",
+          "voxel_format": "r",
+          "extend": [64, 64, 64],
+          "space":[0.01, 0.01, 0.01],
+          "axis": 2,
+          "prefix":"gen_foot_lod2_",
+          "postfix":"",
+          "setw":3
+        },
+        "vol_filename": "",
+        "operations": {
+          "down_sampling": "yes",
+          "down_sampling_method": "max",
+          "statistics": "no",
+          "statistics_filename": "gen_foot_lod2.sliced.ss.json",
+          "mapping": "no",
+          "mapping_ops": {
+            "add": 1
+          }
+        }
+      }
+    }
+  }
+}

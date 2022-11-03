@@ -10,13 +10,6 @@
 VOL_BEGIN
 
 class RawGridVolumeFile {
-    const char* raw          = "raw";
-    const char* volume_name  = "volume_name";
-    const char* voxel_type   = "voxel_type";
-    const char* voxel_format = "voxel_format";
-    const char* extend       = "extend";
-    const char* space        = "space";
-    const char* data_path    = "data_path";
 
     std::pair<RawGridVolumeDesc, bool> ExtractDescFromNameStr(const std::string &filename) {
         return {{}, false};
@@ -33,18 +26,7 @@ class RawGridVolumeFile {
 
         auto& raw_ = j.at("desc");
 
-        desc.volume_name = raw_.count(volume_name) == 0 ? "none" : std::string(raw_.at(volume_name));
-        desc.voxel_info.type = StrToVoxelType(raw_.count(voxel_type) == 0 ? "unknown" : raw_.at(voxel_type));
-        desc.voxel_info.format = StrToVoxelFormat(raw_.count(voxel_format) == 0 ? "none" : raw_.at(voxel_format));
-        if(raw_.count(extend) != 0){
-            std::array<int, 3> shape = raw_.at(extend);
-            desc.extend = {(uint32_t)shape[0], (uint32_t)shape[1], (uint32_t)shape[2]};
-        }
-        if(raw_.count(space) != 0){
-            std::array<float, 3> sp = raw_.at(space);
-            desc.space = {sp[0], sp[1], sp[2]};
-        }
-        desc.data_path = raw_.count(data_path) == 0 ? "" : std::string(raw_.at(data_path));
+        ReadDescFromJson(desc, raw_);
 
         return {desc, true};
     }
@@ -82,7 +64,7 @@ public:
         nlohmann::json jj;
 
         auto& j = jj["desc"];
-
+        using namespace detail;
         j[volume_name]  = desc.volume_name;
         j[voxel_type]   = VoxelTypeToStr(desc.voxel_info.type);
         j[voxel_format] = VoxelFormatToStr(desc.voxel_info.format);
@@ -275,7 +257,7 @@ void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX
     std::vector<uint8_t> voxel(x_voxel_size, 0);
     for(int z = beg_z; z < end_z; z++){
         for(int y = beg_y; y < end_y; y++){
-            size_t dst_offset = ((size_t)z * width * height + (size_t)y * height + beg_x) * voxel_size;
+            size_t dst_offset = ((size_t)z * width * height + (size_t)y * width + beg_x) * voxel_size;
             size_t src_offset = ((size_t)(z - srcZ) * (dstY - srcY) * (dstX - srcX) + (size_t)(y - srcY) * (dstX - srcX) + beg_x - srcX) * voxel_size;
             std::memcpy(voxel.data(), reinterpret_cast<const uint8_t*>(buf)+ src_offset, x_voxel_size);
             _->out.seekp(dst_offset, std::ios::beg);
@@ -303,7 +285,7 @@ void RawGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int srcZ, int dstX
             for(int x = beg_x; x < end_x; x++){
                 writer(x - srcX, y - srcY, z - srcZ, voxel.data() + x * voxel_size, voxel_size);
             }
-            size_t dst_offset_beg = (size_t)z * width * height + (size_t)y * height + beg_x;
+            size_t dst_offset_beg = ((size_t)z * width * height + (size_t)y * width + beg_x) * voxel_size;
             _->out.seekp(dst_offset_beg, std::ios::beg);
             _->out.write(reinterpret_cast<char*>(voxel.data()), x_voxel_size);
         }

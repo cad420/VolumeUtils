@@ -89,10 +89,10 @@ public:
         codec = nullptr;
         if(ctx)
             avcodec_free_context(&ctx);
-        if(pkt)
-            av_packet_free(&pkt);
         if(frame)
             av_frame_free(&frame);
+        if(pkt)
+            av_packet_free(&pkt);
         pts = 0;
     }
 
@@ -171,7 +171,7 @@ public:
         ScopeGuard guard([this]{
             FreeContext();
         });
-        codec = avcodec_find_encoder(AV_CODEC_ID_HEVC);
+        codec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
         if(!codec){
             std::cerr << "AVCodec error: not find codec hevc" << std::endl;
             return false;
@@ -246,7 +246,7 @@ void FFmpegCodec::EncodeFrameIntoPackets(const void *buf, size_t size, Packets &
         _->frame->pts = _->pts++;
     }
     // encode into packets
-    AV__EncodeFrameIntoPackets(_->ctx, buf ? _->frame : nullptr, _->pkt, packets);
+    AV__EncodeFrameIntoPackets(_->ctx, (buf ? _->frame : nullptr), _->pkt, packets);
 }
 
 size_t FFmpegCodec::DecodePacketIntoFrames(const Packet &packet, void *buf, size_t size) {

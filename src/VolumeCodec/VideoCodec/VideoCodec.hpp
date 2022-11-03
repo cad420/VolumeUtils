@@ -41,18 +41,20 @@ using SharedVideoCodecParams = HevcVideoCodecParams;
  * this may be added in later...
  */
 inline bool TransformToShared(const VideoCodec::CodecParams& params, CodecDevice device, SharedVideoCodecParams* ret){
-    if(params.frame_w == 0 || params.frame_w % 2
-    || params.frame_h == 0 || params.frame_h % 2){
-        std::cerr << "Error: Invalid frame shape" << std::endl;
-        return false;
-    }
-    if(params.samplers_per_pixel != 1){
-        std::cerr << "Error: Only support gray image to encode" << std::endl;
-        return false;
-    }
-    if(params.bits_per_sampler != 8 && params.bits_per_sampler != 16){
-        std::cerr << "Error: Only support 8 or 16 bits per raw sampler" << std::endl;
-        return false;
+    if(params.encode){
+        if (params.frame_w == 0 || params.frame_w % 2
+            || params.frame_h == 0 || params.frame_h % 2) {
+            std::cerr << "Error: Invalid frame shape" << std::endl;
+            return false;
+        }
+        if (params.samplers_per_pixel != 1) {
+            std::cerr << "Error: Only support gray image to encode" << std::endl;
+            return false;
+        }
+        if (params.bits_per_sampler != 8 && params.bits_per_sampler != 16) {
+            std::cerr << "Error: Only support 8 or 16 bits per raw sampler" << std::endl;
+            return false;
+        }
     }
     if(ret){
         ret->frame_width = params.frame_w;
