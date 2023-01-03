@@ -6,6 +6,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <thread>
 
 VOL_BEGIN
 
@@ -121,12 +122,12 @@ inline auto CreateCPUVolumeVideoCodecByVoxel(const VoxelInfo& voxel_info)->std::
     auto [type, format] = voxel_info;
     if(type == VoxelType::uint8){
         if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>(1);
+            return std::make_unique<VolumeVideoCodec<VoxelRU8,CodecDevice::CPU>>(std::thread::hardware_concurrency());
         }
     }
     else if(type == VoxelType::uint16){
         if(format == VoxelFormat::R){
-            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>(1);
+            return std::make_unique<VolumeVideoCodec<VoxelRU16,CodecDevice::CPU>>(std::thread::hardware_concurrency());
         }
     }
     return nullptr;
