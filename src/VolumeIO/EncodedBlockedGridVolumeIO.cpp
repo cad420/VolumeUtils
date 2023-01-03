@@ -593,12 +593,18 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
     const int buffer_length = block_length + 2 * padding;
     auto dst_ptr = _->block_data.data();
     for(int z = 0; z < buffer_length; z++){
-        for(int y = 0; y < buffer_length; y++){
+        parallel_forrange(0, buffer_length, [&](int thread_idx, int y){
             for(int x = 0; x < buffer_length; x++){
                 size_t dst_offset = ((size_t)buffer_length * buffer_length * z + buffer_length * y + x) * voxel_size;
                 writer(x, y, z, dst_ptr + dst_offset, voxel_size);
             }
-        }
+        });
+//        for(int y = 0; y < buffer_length; y++){
+//            for(int x = 0; x < buffer_length; x++){
+//                size_t dst_offset = ((size_t)buffer_length * buffer_length * z + buffer_length * y + x) * voxel_size;
+//                writer(x, y, z, dst_ptr + dst_offset, voxel_size);
+//            }
+//        }
     }
 //    if(blockIndex == BlockIndex{1, 2, 1}){
 //        std::ofstream out("H:/Volume/test_block1#2#1#_256_256_256_uint8.raw", std::ios::binary);

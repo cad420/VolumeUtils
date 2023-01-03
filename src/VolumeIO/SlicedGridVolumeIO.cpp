@@ -463,6 +463,7 @@ void SlicedGridVolumeReader::ReadSliceData(int sliceIndex, int srcX, int srcY, i
     }
     assert(srcX < dstX && srcY < dstY && reader);
 
+    //这里还可以优化，不用读取整张slice，但是从文件读取需要的数据
     ReadSliceData(sliceIndex, _->slice_data.data());
     auto src_ptr = reinterpret_cast<const uint8_t*>(_->slice_data.data());
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);

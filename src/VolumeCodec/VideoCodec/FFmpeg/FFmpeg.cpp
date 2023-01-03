@@ -137,6 +137,7 @@ public:
         ctx->framerate = {30, 1};
         ctx->bits_per_raw_sample = params.bits_per_sampler;
         ctx->pix_fmt = TransformPixelFormat(params.fmt);
+        ctx->thread_count = std::thread::hardware_concurrency();
         // because interfaces in Volume.hpp not consider of encode quality... just set medium
         av_opt_set(ctx->priv_data, "preset", "medium", 0);
         av_opt_set(ctx->priv_data, "tune", "fastdecode", 0);

@@ -1,7 +1,7 @@
 #pragma once
 #include <fstream>
 #include "VolumeProcessor.hpp"
-
+#include "Utils.hpp"
 template<typename Voxel>
 struct IOImpl {
     using Unit = typename Processor<Voxel>::Unit;
@@ -66,7 +66,7 @@ struct IOImpl {
         auto eb_mapping_func = oblocked_encoded_unit.ops.mapping.GetOp();
 
         StatisticsOp<Voxel> eb_ss;
-
+        progress_bar_t pb(30);
         for (int z_turn = 0; z_turn < z_read_count; z_turn++) {
             for (int y_turn = 0; y_turn < y_read_count; y_turn++) {
                 reader->ReadVolumeData(range.src_x - padding,
@@ -76,6 +76,8 @@ struct IOImpl {
                                        range.src_y + (y_turn + 1) * block_length + padding,
                                        range.src_z + (z_turn + 1) * block_length + padding,
                                        grid.GetRawDataPtr());
+                pb.set_percent(100.0 * (z_turn * y_read_count + y_turn) / (z_read_count * y_read_count));
+                pb.display();
 //                if(y_turn == 2 && z_turn == 1){
 //                    std::ofstream out("H:/Volume/grid_1272_256_256_uint8.raw", std::ios::binary);
 //                    out.write(reinterpret_cast<const char*>(grid.GetRawDataPtr()),
@@ -115,6 +117,7 @@ struct IOImpl {
                                                                       *p = grid(x, dy, dz);
                                                                   });
                     }
+
                 }
                 if (!Other) continue;
                 // write grid to slices
@@ -162,6 +165,7 @@ struct IOImpl {
                 }
             }
         }
+        pb.done();
     }
 
 
@@ -214,8 +218,8 @@ struct IOImpl {
                                                                 other_ss_func->AddVoxel(*p);
                                                             });
                 } else {
-                    param.other_writer->WriteVolumeData(0, 0, (z - range.src_z - 1) / 2, slice_w / 2 + 1, slice_h / 2 + 1,
-                                                        (z - range.src_z - 1) / 2 + 1,
+                    param.other_writer->WriteVolumeData(0, 0, (z - range.src_z - is_even) / 2, slice_w / 2 + 1, slice_h / 2 + 1,
+                                                        (z - range.src_z - is_even) / 2 + 1,
                                                         [&, other_mp_func = param.other_mp_func,
                                                                 other_ss_func = param.other_ss_func, other_ds_func = param.other_ds_func,
                                                                 end_x = slice_w, end_y = slice_h, end_z = slice_count]

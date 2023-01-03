@@ -22,5 +22,21 @@ target_include_directories(
         TestFFmpeg
         PUBLIC
         ${PROJECT_SOURCE_DIR}/deps/binary/ffmpeg/include
+)
+
+add_executable(TransferFile TransferFile.cpp)
+target_compile_features(
+        TransferFile
+        PRIVATE
+        cxx_std_20
+)
+target_link_libraries(
+        TransferFile
+        PRIVATE
+        VolumeUtils
+)
+target_include_directories(
+        TransferFile
+        PUBLIC
 
 )
