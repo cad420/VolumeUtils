@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 project(VolumeUtils)
 
 option(ENABLE_HIGH_PERFORMANCE "" ON)
+option(BUILD_TEST "" OFF)
+option(BUILD_TOOL "" ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
 
@@ -69,7 +71,10 @@ target_link_libraries(
 )
 
 
+if(BUILD_TEST)
+    add_subdirectory(test)
+endif()
 
-add_subdirectory(test)
-
-add_subdirectory(tool)
+if(BUILD_TOOL)
+    add_subdirectory(tool)
+endif()

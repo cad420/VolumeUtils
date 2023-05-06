@@ -20,8 +20,8 @@
           "voxel_format": "r",
           "extend": [1024,1024,795],
           "space": [0.01,0.01,0.01],
-          "block_length": 192,
-          "padding": 32,
+          "block_length": 254,
+          "padding": 1,
           "volume_codec": "video",
           "data_path" : "H:/Volume/genkingsnake_8p1_max_lod0_1024_1024_795_uint8.ebd"
         },
@@ -80,8 +80,8 @@
           "voxel_format": "r",
           "extend": [512, 512, 398],
           "space": [0.02, 0.02, 0.02],
-          "block_length": 192,
-          "padding": 32,
+          "block_length": 254,
+          "padding": 1,
           "volume_codec": "video",
           "data_path" : "H:/Volume/genkingsnake_8p1_max_lod1_1024_1024_795_uint8.ebd"
         },
