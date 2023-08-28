@@ -97,7 +97,7 @@ namespace{
         }
 
         size_t Read(void* buf, size_t size) override{
-            assert(size >= tif_slice_info.width * tif_slice_info.height * tif_slice_info.samplers_per_pixel * tif_slice_info.bits_per_sampler / 8);
+            assert(size >= (size_t)tif_slice_info.width * tif_slice_info.height * tif_slice_info.samplers_per_pixel * tif_slice_info.bits_per_sampler / 8);
             return Read(0, tif_slice_info.height, buf, size);
         }
 

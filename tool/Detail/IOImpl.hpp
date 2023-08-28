@@ -1,7 +1,12 @@
 #pragma once
 #include <fstream>
+#include <iostream>
+#include <format>
+#include <chrono>
+
 #include "VolumeProcessor.hpp"
 #include "Utils.hpp"
+
 template<typename Voxel>
 struct IOImpl {
     using Unit = typename Processor<Voxel>::Unit;
@@ -188,6 +193,10 @@ struct IOImpl {
         raw_desc.voxel_info = {.type = Voxel::type, .format = Voxel::format};
         RawGridVolume<Voxel> grid(raw_desc);
 
+        auto startTime = std::chrono::system_clock::now();
+        auto endTime = std::chrono::system_clock::now();
+        int lastZ = range.src_z;
+
         for (int z = range.src_z; z < range.dst_z; z++) {
             bool is_even = (z - range.src_z) % 2;
             auto slice_buffer_ptr = reinterpret_cast<Voxel *>(grid.GetRawDataPtr() + slice_w * slice_h * int(is_even));
@@ -196,7 +205,6 @@ struct IOImpl {
             bool is_last = z == range.dst_z - 1;
             if (!is_even && !is_last) continue;
 
-
             for (auto &param: params.writers) {
                 if (!param.other_has_ds) {
                     if(param.other_has_mp)
@@ -204,9 +212,13 @@ struct IOImpl {
                                                         [&, other_mp_func = param.other_mp_func,
                                                                 other_ss_func = param.other_ss_func]
                                                                 (int dx, int dy, int dz, void *dst, size_t ele_size) {
-                                                            auto p = reinterpret_cast<Voxel *>(dst);
-                                                            *p = other_mp_func(grid(dx, dy, dz));
-                                                            other_ss_func->AddVoxel(*p);
+                                                            auto p = reinterpret_cast<VoxelRU8 *>(dst);
+                                                            auto x = other_mp_func(grid(dx, dy, dz)).x;
+                                                            if (x >= (decltype(x))256)
+                                                                p->x = 255;
+                                                            else
+                                                                p->x = x;
+                                                            //other_ss_func->AddVoxel(*p);
                                                         });
                     else
                         param.other_writer->WriteVolumeData(0, 0, z - range.src_z - 1 + (!is_even), slice_w, slice_h, z - range.src_z + 1,
@@ -243,6 +255,15 @@ struct IOImpl {
                                                         });
                 }
             }
+
+            endTime = std::chrono::system_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+            std::cout << std::format("Converting slices from {} to {} takes {} seconds.\n", lastZ, z,
+                                     ((double)duration.count() * std::chrono::milliseconds::period::num /
+                                      std::chrono::milliseconds::period::den));
+
+            startTime = std::chrono::system_clock::now();
+            lastZ = z + 1;
         }
 
     }
