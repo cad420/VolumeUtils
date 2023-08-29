@@ -55,6 +55,8 @@ struct IOImpl {
         int z_read_count = (read_z_size + block_length - 1) / block_length;
         int x_block_count = (read_x_size + block_length - 1) / block_length;
 
+        std::cout << std::format("Read count: (x:{}, y:{}, z:{})\n", x_block_count, y_read_count, z_read_count);
+
         Extend3D grid_extend{(uint32_t)x_block_count * block_length + 2 * padding, (uint32_t)block_size, (uint32_t)block_size};
         VoxelInfo _voxel_info{.type = Voxel::type, .format = Voxel::format};
         RawGridVolumeDesc raw_desc{.extend = grid_extend}; raw_desc.voxel_info = _voxel_info;
@@ -72,6 +74,8 @@ struct IOImpl {
 
         StatisticsOp<Voxel> eb_ss;
         progress_bar_t pb(30);
+        auto startTime = std::chrono::system_clock::now();
+        auto endTime = std::chrono::system_clock::now();
         for (int z_turn = 0; z_turn < z_read_count; z_turn++) {
             for (int y_turn = 0; y_turn < y_read_count; y_turn++) {
                 reader->ReadVolumeData(range.src_x - padding,
@@ -121,6 +125,13 @@ struct IOImpl {
                                                                       int x = x_turn * block_length + dx;
                                                                       *p = grid(x, dy, dz);
                                                                   });
+                        endTime = std::chrono::system_clock::now();
+                        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+                        std::cout << std::format("Converting block (z:{}, y:{}, x:{}) takes {} seconds.\n", z_turn,
+                                                 y_turn, x_turn,
+                                                 ((double)duration.count() * std::chrono::milliseconds::period::num /
+                                                  std::chrono::milliseconds::period::den));
+                        startTime = std::chrono::system_clock::now();
                     }
 
                 }

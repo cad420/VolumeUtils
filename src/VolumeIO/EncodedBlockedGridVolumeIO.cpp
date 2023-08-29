@@ -4,6 +4,7 @@
 #include <json.hpp>
 #include <algorithm>
 #include <fstream>
+#include <source_location>
 
 VOL_BEGIN
 
@@ -585,6 +586,10 @@ void EncodedBlockedGridVolumeWriter::WriteVolumeData(int srcX, int srcY, int src
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, VolumeWriteFunc writer) {
+#ifdef VOL_DEBUG
+    auto startTime = std::chrono::system_clock::now();
+#endif // VOL_DEBUG
+
     assert(_->CheckValidation(blockIndex) && writer);
 
     size_t voxel_size = GetVoxelSize(_->desc.voxel_info);
@@ -592,6 +597,7 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
     const int padding = _->desc.padding;
     const int buffer_length = block_length + 2 * padding;
     auto dst_ptr = _->block_data.data();
+
     for(int z = 0; z < buffer_length; z++){
         parallel_forrange(0, buffer_length, [&](int thread_idx, int y){
             for(int x = 0; x < buffer_length; x++){
@@ -599,6 +605,7 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
                 writer(x, y, z, dst_ptr + dst_offset, voxel_size);
             }
         });
+
 //        for(int y = 0; y < buffer_length; y++){
 //            for(int x = 0; x < buffer_length; x++){
 //                size_t dst_offset = ((size_t)buffer_length * buffer_length * z + buffer_length * y + x) * voxel_size;
@@ -606,6 +613,15 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
 //            }
 //        }
     }
+
+    
+#ifdef VOL_DEBUG
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    std::cout << std::format("{} takes {}.\n", std::source_location::current().function_name(), duration);
+#endif // VOL_DUBUG
+
+
 //    if(blockIndex == BlockIndex{1, 2, 1}){
 //        std::ofstream out("H:/Volume/test_block1#2#1#_256_256_256_uint8.raw", std::ios::binary);
 //        out.write(reinterpret_cast<const char*>(_->block_data.data()), _->block_bytes);
@@ -616,7 +632,11 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
 }
 
 void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex, const void *buf) {
-    assert(_->CheckValidation(blockIndex) && buf);
+#ifdef VOL_DEBUG
+    auto startTime = std::chrono::system_clock::now();
+#endif // VOL_DEBUG
+
+    assert(_->CheckValidation(blockIndex) && buf);    
 
     Packets packets;
     const uint32_t bl = _->desc.block_length + 2 * _->desc.padding;
@@ -630,10 +650,21 @@ void EncodedBlockedGridVolumeWriter::WriteBlockData(const BlockIndex &blockIndex
 //                       for(int i = 0; i < 256; i++)
 //                           std::cout << "(" << i << " : " << (int)(table[i]) << ")" << std::endl;
 //                   })
+
+#ifdef VOL_DEBUG
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    std::cout << std::format("{} takes {}.\n", std::source_location::current().function_name(), duration);
+#endif // VOL_DUBUG
+
     WriteEncodedBlockData(blockIndex, packets);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const Packets &packets) {
+#ifdef VOL_DEBUG
+    auto startTime = std::chrono::system_clock::now();
+#endif // VOL_DEBUG
+
     assert(_->CheckValidation(blockIndex));
 
     size_t buf_size = packets.size() * sizeof(size_t);
@@ -656,13 +687,31 @@ void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blo
         offset += packet.size();
     }
     assert(offset == buf_size);
+    
+#ifdef VOL_DEBUG
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    std::cout << std::format("{} takes {}.\n", std::source_location::current().function_name(), duration);
+#endif // VOL_DUBUG
+
     WriteEncodedBlockData(blockIndex, buf, buf_size);
 }
 
 void EncodedBlockedGridVolumeWriter::WriteEncodedBlockData(const BlockIndex &blockIndex, const void *buf, size_t size) {
+#ifdef VOL_DEBUG
+    auto startTime = std::chrono::system_clock::now();
+#endif // VOL_DEBUG
+
     assert(_->CheckValidation(blockIndex) && buf && size);
 
     _->file.WriteBlock(blockIndex, buf, size);
+
+#ifdef VOL_DEBUG
+    auto endTime = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime);
+    std::cout << std::format("{} takes {}.\n", std::source_location::current().function_name(), duration);
+#endif // VOL_DUBUG
+
     VOL_WHEN_DEBUG(std::cout << "write encode block size : " << size << std::endl)
 }
 
